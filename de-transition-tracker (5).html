@@ -1,0 +1,1348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DE Transition Pipeline — Tracker + Revision Notes</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap');
+:root{--bg:#0B1017;--panel:#111925;--panel2:#0E141E;--line:#1E2A3A;--text:#DCE6F0;--muted:#7E8DA1;--teal:#4FD1B5;--amber:#E8B45A;--violet:#A78BFA;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:'Space Grotesk',system-ui,sans-serif;}
+.wrap{max-width:860px;margin:0 auto;padding:20px 14px 60px;}
+button{font-family:inherit;cursor:pointer}
+a{color:var(--text)}
+.eyebrow{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--muted);text-transform:uppercase;margin-bottom:4px;}
+h1.title{font-size:clamp(22px,5vw,34px);font-weight:700;margin:0;line-height:1;}
+.hdr-top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;}
+.pct-big{font-family:'IBM Plex Mono',monospace;font-size:clamp(28px,5vw,40px);font-weight:600;color:var(--teal);line-height:1;text-align:right;}
+.pct-sign{font-size:.5em;color:var(--muted)}
+.pct-sub{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);margin-top:2px;text-align:right;}
+.tabs{display:flex;gap:8px;margin:20px 0 18px;flex-wrap:wrap;}
+.tab{background:var(--panel);border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:8px 14px;font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.08em;}
+.tab.active{border-color:var(--teal);color:var(--teal);}
+.tab:hover{color:var(--text)}
+.tab.active:hover{color:var(--teal)}
+.pipeline{display:flex;align-items:center;margin:6px 0 16px;}
+.pipe-seg{display:flex;align-items:center;flex:1}.pipe-seg:last-child{flex:0}
+.pipe-node{width:34px;height:34px;border-radius:50%;flex-shrink:0;border:1.5px solid var(--line);background:var(--panel);color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;transition:all .2s;}
+.pipe-node.running{border-color:var(--teal);color:var(--teal);box-shadow:0 0 12px rgba(79,209,181,.25);}
+.pipe-node.done{background:var(--teal);border-color:var(--teal);color:#06251E;}
+.pipe-edge{flex:1;height:2px;background:var(--line);margin:0 6px;position:relative;overflow:hidden;border-radius:2px;}
+.pipe-edge-fill{position:absolute;left:0;top:0;bottom:0;background:var(--teal);transition:width .4s;}
+.tracks{display:grid;gap:6px;margin-bottom:16px;}
+.track{display:grid;grid-template-columns:10px 130px 1fr 42px;align-items:center;gap:10px;font-size:12px;}
+.track-dot{width:8px;height:8px;border-radius:2px;}
+.track-name{color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:11px;}
+.track-bar{height:4px;background:var(--line);border-radius:2px;overflow:hidden;}
+.track-fill{height:100%;transition:width .4s;}
+.track-pct{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);text-align:right;}
+.rules{border:1px dashed var(--line);border-radius:8px;padding:10px 12px;font-size:12.5px;color:var(--muted);line-height:1.5;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+.rules-key{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.12em;color:var(--amber);border:1px solid var(--amber);border-radius:4px;padding:1px 6px;flex-shrink:0;}
+.next-btn{margin-left:auto;background:transparent;border:1px solid var(--teal);color:var(--teal);border-radius:6px;padding:4px 10px;font-family:'IBM Plex Mono',monospace;font-size:11px;}
+.phase{margin-bottom:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);overflow:hidden;}
+.phase-hdr{width:100%;display:flex;justify-content:space-between;align-items:center;gap:12px;background:transparent;border:none;color:var(--text);padding:14px 16px;text-align:left;}
+.phase-hdr:hover{background:rgba(255,255,255,.02)}
+.phase-left{display:flex;align-items:center;gap:12px;min-width:0;}
+.chev{font-size:20px;color:var(--muted);transition:transform .2s;display:inline-block;flex-shrink:0;}
+.chev.open{transform:rotate(90deg)}
+.phase-idx{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;color:var(--teal);margin-right:8px;}
+.phase-name{font-weight:700;font-size:15px;}
+.phase-tag{font-size:12px;color:var(--muted);margin-top:2px;}
+.phase-right{display:flex;align-items:center;gap:10px;flex-shrink:0;}
+.phase-bar{width:90px;height:4px;background:var(--line);border-radius:2px;overflow:hidden;}
+.phase-fill{height:100%;background:var(--teal);transition:width .4s;}
+.phase-pct{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);width:36px;text-align:right;}
+.days{border-top:1px solid var(--line)}
+.day{border-bottom:1px solid var(--line)}
+.day:last-child{border-bottom:none}
+.day.complete .day-title{color:var(--muted);text-decoration:line-through;}
+.day-row{width:100%;display:flex;align-items:center;gap:12px;background:transparent;border:none;color:var(--text);padding:11px 16px;text-align:left;font-size:13.5px;}
+.day-row:hover{background:rgba(255,255,255,.025)}
+.day-num{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);flex-shrink:0;width:22px;}
+.day-title{flex:1;min-width:0;line-height:1.35;}
+.day-lights{display:flex;gap:5px;flex-shrink:0;}
+.light{width:9px;height:9px;border-radius:50%;border:1.5px solid;}
+.day-body{padding:4px 16px 16px 50px;display:grid;gap:10px;}
+@media (max-width:560px){.day-body{padding-left:16px}}
+.block{border-left:2px solid;background:var(--panel);border-radius:0 8px 8px 0;padding:10px 12px;}
+.block-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+.block-tag{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;}
+.check{display:flex;align-items:center;gap:6px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);cursor:pointer;}
+.check input{accent-color:var(--teal);width:15px;height:15px;cursor:pointer;}
+.qlink{font-family:'IBM Plex Mono',monospace;font-size:13px;text-decoration:none;border-bottom:1px solid var(--line);display:inline-block;margin-bottom:6px;}
+.qlink:hover{color:var(--teal);border-color:var(--teal);}
+.res-links{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:6px;}
+.opt{margin-top:8px;border-top:1px dashed var(--line);padding-top:7px;}
+.opt summary{cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:.06em;list-style:none;}
+.opt summary::-webkit-details-marker{display:none}
+.opt summary:hover{color:var(--text)}
+.opt[open] summary{color:var(--teal)}
+.opt-note{margin-top:6px}
+.hintbox{margin-top:7px;border-left:2px dashed var(--line);padding:4px 0 4px 10px;}
+.hintbox summary{cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:.06em;list-style:none;}
+.hintbox summary::-webkit-details-marker{display:none}
+.hintbox summary:hover{color:var(--text)}
+.hintbox[open] summary{color:var(--amber)}
+
+.opt-check{margin-top:8px}
+.opt-pct{color:var(--muted);font-size:10px}
+.light.opt-glow{box-shadow:0 0 7px var(--glow)}
+.note-btn{background:transparent;border:1px dashed var(--line);color:var(--muted);border-radius:6px;padding:6px 10px;font-family:'IBM Plex Mono',monospace;font-size:11px;text-align:left;}
+.note-btn:hover{border-color:var(--teal);color:var(--teal);}
+.note-form{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;display:grid;gap:8px;margin-bottom:16px;}
+.note-tag-input,.note-text-input{background:var(--panel2);border:1px solid var(--line);border-radius:6px;color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:12.5px;padding:8px 10px;width:100%;}
+.note-tag-input:focus,.note-text-input:focus{outline:none;border-color:var(--teal);}
+.note-text-input{resize:vertical;min-height:60px;font-family:'Space Grotesk',sans-serif;font-size:13.5px;line-height:1.5;}
+.note-form-row{display:flex;gap:8px;}
+.note-save{background:var(--teal);border:none;color:#06251E;border-radius:6px;padding:7px 14px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;}
+.note-cancel{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:6px;padding:7px 12px;font-family:'IBM Plex Mono',monospace;font-size:11px;}
+.note-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;}
+.note-card-hdr{display:flex;align-items:center;gap:10px;margin-bottom:5px;}
+.note-card-tag{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;color:var(--teal);border:1px solid var(--teal);border-radius:4px;padding:1px 6px;}
+.note-card-date{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);}
+.note-card-actions{margin-left:auto;display:flex;gap:6px;}
+.note-mini{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:4px;padding:2px 8px;font-family:'IBM Plex Mono',monospace;font-size:10px;}
+.note-mini:hover{color:var(--text);border-color:var(--muted);}
+.note-mini.danger:hover{color:#E08683;border-color:#C0504D;}
+.note-card-text{font-size:13.5px;line-height:1.55;color:#B9C5D4;margin:0;}
+.sync{margin-top:18px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);padding:12px 14px;}
+.sync summary{cursor:pointer;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--muted);letter-spacing:.06em;list-style:none;}
+.sync summary::-webkit-details-marker{display:none}
+.sync summary:hover{color:var(--text)}
+.sync[open] summary{color:var(--teal);margin-bottom:10px;}
+.sync-help{font-size:12.5px;color:var(--muted);line-height:1.55;margin:6px 0 10px;}
+.sync input{margin-bottom:8px;}
+.sync-status{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);margin-top:8px;min-height:14px;}
+.sync-divider{border-top:1px dashed var(--line);margin:14px 0 6px;}
+.quiz-overlay{position:fixed;inset:0;background:rgba(5,8,12,.8);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px;}
+.quiz-box{background:var(--panel2);border:1px solid var(--teal);border-radius:12px;padding:18px;max-width:480px;width:100%;box-shadow:0 0 30px rgba(79,209,181,.15);}
+.quiz-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+.quiz-title{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;color:var(--teal);}
+.quiz-prog{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);}
+.quiz-q{font-size:15px;font-weight:500;line-height:1.5;margin:0 0 12px;}
+.quiz-a{background:var(--panel);border-left:2px solid var(--teal);border-radius:0 8px 8px 0;padding:10px 12px;font-size:13.5px;line-height:1.55;color:#B9C5D4;margin-bottom:12px;}
+.quiz-actions{display:flex;gap:8px;flex-wrap:wrap;}
+.quiz-btn{background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:9px 14px;font-family:'IBM Plex Mono',monospace;font-size:12px;}
+.quiz-btn:hover{border-color:var(--muted)}
+.quiz-btn.reveal{border-color:var(--teal);color:var(--teal);width:100%;}
+.quiz-btn.good{border-color:var(--teal);color:var(--teal);}
+.quiz-btn.warn{border-color:var(--amber);color:var(--amber);}
+.quiz-skip{background:none;border:none;color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:10px;margin-top:12px;text-decoration:underline;padding:0;}
+.quiz-skip:hover{color:var(--text)}
+.ladder{margin:8px 0 4px;padding-left:18px;font-size:12.5px;line-height:1.65;color:#B9C5D4;}
+.ladder li{margin-bottom:7px;}
+.ladder-link{background:none;border:none;padding:0;color:var(--teal);font:inherit;text-decoration:underline;cursor:pointer;}
+.ladder-link:hover{color:var(--text)}
+.ladder-a{color:var(--teal);text-decoration:underline;}
+.ladder-a:hover{color:var(--text)}
+.stuckpath[open] summary{color:var(--amber)}
+
+
+
+
+
+.note{font-size:13px;line-height:1.55;color:#B9C5D4;margin:0;}
+.note.stuck{color:var(--muted)}
+.stuck-tag{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.12em;color:var(--muted);border:1px solid var(--line);border-radius:3px;padding:1px 5px;margin-right:7px;text-transform:uppercase;vertical-align:1px;}
+.ftr{display:flex;justify-content:space-between;align-items:center;margin-top:20px;}
+.save{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);}
+.save.saved{color:var(--teal)}
+.reset{background:transparent;border:1px solid var(--line);color:var(--muted);border-radius:6px;padding:5px 10px;font-family:'IBM Plex Mono',monospace;font-size:11px;}
+.reset:hover{border-color:#C0504D;color:#E08683;}
+/* notes pages */
+.notes h2{font-size:15px;font-weight:700;margin:26px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--line);}
+.notes h2:first-child{margin-top:4px}
+.notes .accent-sql{color:var(--amber)} .notes .accent-py{color:var(--violet)}
+.notes p{font-size:13.5px;line-height:1.6;color:#B9C5D4;margin:6px 0;}
+.notes pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;overflow-x:auto;font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.55;color:#CFE3D9;margin:8px 0;}
+.notes .trap{border-left:2px solid var(--amber);background:var(--panel);border-radius:0 8px 8px 0;padding:8px 12px;font-size:13px;color:#D8C9A6;margin:8px 0;}
+.notes .trap b{color:var(--amber);font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.12em;}
+.notes ul{margin:6px 0;padding-left:18px;font-size:13.5px;line-height:1.7;color:#B9C5D4;}
+.hidden{display:none}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr-top">
+    <div>
+      <div class="eyebrow">analyst → data engineer</div>
+      <h1 class="title">TRANSITION PIPELINE</h1>
+    </div>
+    <div>
+      <div class="pct-big" id="pctBig">0<span class="pct-sign">%</span></div>
+      <div class="pct-sub" id="pctSub"></div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="tracker">TRACKER</button>
+    <button class="tab" data-tab="db">DB BASICS</button>
+    <button class="tab" data-tab="sql">SQL REVISION</button>
+    <button class="tab" data-tab="py">PYTHON REVISION</button>
+    <button class="tab" data-tab="notes">MY NOTES</button>
+  </div>
+
+  <!-- ─────────── TRACKER TAB ─────────── -->
+  <div id="tab-tracker">
+    <div class="pipeline" id="pipeline"></div>
+    <div class="tracks" id="tracks"></div>
+    <div class="rules">
+      <span class="rules-key">RULE</span>
+      drills stay ≤ 30 min/day — they never replace the DE topic. Miss a day? Continue, don't restart.
+      <button class="next-btn" id="resumeBtn"></button>
+    </div>
+    <div id="phases"></div>
+    <div class="ftr">
+      <span class="save" id="saveMsg">progress auto-saves in this browser</span>
+      <button class="reset" id="resetBtn">reset all progress</button>
+    </div>
+
+    <details class="sync" id="syncPanel">
+      <summary>☁ cross-device sync (via GitHub Gist)</summary>
+      <p class="sync-help">Enter these once on each device. Your progress + notes save to a <b>private</b> Gist on your GitHub account and auto-push after every change. Create a token at github.com → Settings → Developer settings → Personal access tokens → Fine-grained → give it only <b>Gists: read &amp; write</b>.</p>
+      <input id="syncToken" class="note-tag-input" type="password" placeholder="GitHub token (stored only in this browser)">
+      <input id="syncGist" class="note-tag-input" placeholder="Gist ID (leave empty on first push — created automatically)">
+      <div class="note-form-row">
+        <button id="syncPush" class="note-save">push to cloud</button>
+        <button id="syncPull" class="note-cancel" style="display:inline-block">pull from cloud</button>
+        <button id="syncForget" class="note-cancel" style="display:inline-block">forget on this device</button>
+      </div>
+      <div class="sync-status" id="syncStatus"></div>
+      <div class="sync-divider"></div>
+      <p class="sync-help">No GitHub? Manual backup: copy the code from one device, paste on another.</p>
+      <div class="note-form-row">
+        <button id="expBtn" class="note-cancel" style="display:inline-block">export progress code</button>
+        <button id="impBtn" class="note-cancel" style="display:inline-block">import progress code</button>
+      </div>
+      <textarea id="portArea" class="note-text-input hidden" rows="4" spellcheck="false"></textarea>
+      <button id="impApply" class="note-save hidden">apply imported code</button>
+    </details>
+  </div>
+
+  <!-- ─────────── DB BASICS TAB ─────────── -->
+  <div id="tab-db" class="notes hidden">
+    <h2 style="color:var(--teal)">Tables, rows, and keys</h2>
+    <p>A relational database stores data in <b>tables</b> (relations). Each <b>row</b> is one record; each <b>column</b> has a fixed type. Keys are how rows are identified and connected:</p>
+    <ul>
+      <li><b>Primary key (PK)</b> — uniquely identifies each row; can't be NULL; one per table. Can be one column (id) or several (<b>composite key</b>: order_id + product_id).</li>
+      <li><b>Candidate key</b> — any column(s) that COULD be the PK (email is a candidate; you picked id). The rest become <b>alternate keys</b>.</li>
+      <li><b>Foreign key (FK)</b> — a column holding another table's PK, creating the relationship. The DB can enforce it (referential integrity): you can't insert an order for a customer that doesn't exist.</li>
+      <li><b>Surrogate key</b> — generated meaningless ID (auto-increment, UUID) vs <b>natural key</b> — real business value (email, PAN). Prefer surrogates; business values change.</li>
+    </ul>
+    <pre>-- constraints: rules the DB enforces for you
+PRIMARY KEY   UNIQUE   NOT NULL   DEFAULT 0
+CHECK (age >= 18)
+FOREIGN KEY (customer_id) REFERENCES customers(id)</pre>
+
+    <h2 style="color:var(--teal)">Relationships & cardinality</h2>
+    <ul>
+      <li><b>1 : N</b> (most common) — one customer, many orders. FK lives on the MANY side (orders.customer_id).</li>
+      <li><b>1 : 1</b> — one user, one profile. FK + UNIQUE on either side (often just merged into one table).</li>
+      <li><b>M : N</b> — students ↔ courses. Needs a <b>junction table</b> (enrollments: student_id + course_id), because you can't store many values in one FK column.</li>
+    </ul>
+
+    <h2 style="color:var(--teal)">Normalization — with a worked example</h2>
+    <p>Normalization = splitting tables to remove redundancy, so each fact is stored exactly once. Start with this mess:</p>
+    <pre>orders_bad
+order_id | customer_name | customer_city | products
+1001     | Asha          | Pune          | "pen, notebook"
+1002     | Asha          | Pune          | "pen"</pre>
+    <p><b>1NF — atomic values:</b> no lists inside a cell, no repeating groups. Every cell holds ONE value; every row is unique.</p>
+    <pre>order_id | customer_name | customer_city | product
+1001     | Asha          | Pune          | pen
+1001     | Asha          | Pune          | notebook
+1002     | Asha          | Pune          | pen</pre>
+    <p><b>2NF — no partial dependency:</b> (only matters with composite keys). Key here is (order_id, product). customer_name depends only on order_id — HALF the key. Split it out:</p>
+    <pre>orders: order_id | customer_name | customer_city
+order_items: order_id | product</pre>
+    <p><b>3NF — no transitive dependency:</b> non-key columns must depend on the key, nothing else. customer_city depends on the CUSTOMER, not the order → split again:</p>
+    <pre>customers:   id | name | city
+orders:      order_id | customer_id
+order_items: order_id | product</pre>
+    <p>The interview one-liner for 3NF: <i>every non-key column depends on "the key, the whole key, and nothing but the key."</i></p>
+    <div class="trap"><b>WHY IT MATTERS</b> · Unnormalized, Asha's city is stored 3 times — updating one row and missing others creates contradicting data (an <b>update anomaly</b>). Normalization also prevents insert anomalies (can't add a customer with no order) and delete anomalies (deleting the last order erases the customer).</div>
+    <p><b>Denormalization</b> is doing this in reverse, on purpose: analytics tables (your star schemas) merge dimensions back in or accept redundancy because reads with fewer joins matter more than write anomalies — the warehouse is rebuilt by pipelines anyway. OLTP → normalize; OLAP → denormalize deliberately. Higher forms (BCNF, 4NF) exist; 3NF is what jobs and interviews actually mean by "normalized."</p>
+
+    <h2 style="color:var(--teal)">Transactions & ACID</h2>
+    <p>A <b>transaction</b> groups statements so they succeed or fail as one unit — the classic example is transferring money (debit + credit must BOTH happen).</p>
+    <pre>BEGIN;
+UPDATE accounts SET balance = balance - 500 WHERE id = 1;
+UPDATE accounts SET balance = balance + 500 WHERE id = 2;
+COMMIT;    -- or ROLLBACK; to undo everything</pre>
+    <ul>
+      <li><b>A</b>tomicity — all or nothing; a crash mid-way rolls back.</li>
+      <li><b>C</b>onsistency — constraints hold before and after (no negative balance if CHECKed).</li>
+      <li><b>I</b>solation — concurrent transactions don't see each other's half-done work. Levels range from READ UNCOMMITTED to SERIALIZABLE (stricter = safer = slower).</li>
+      <li><b>D</b>urability — once committed, it survives a crash (written to disk / WAL).</li>
+    </ul>
+    <p>DE tie-in: this is exactly what plain files on S3 LACK, and what Delta/Iceberg's transaction log adds back on the lake.</p>
+
+    <h2 style="color:var(--teal)">Indexes — why queries are fast (or aren't)</h2>
+    <p>An index is a sorted lookup structure (usually a <b>B-tree</b>) on chosen columns. Without one, <code>WHERE email = 'x'</code> scans every row (O(n)); with one, the DB jumps straight there (O(log n)) — like a book's index vs reading every page. PKs are indexed automatically.</p>
+    <ul>
+      <li>Index columns you filter and join on frequently.</li>
+      <li>Trade-off: every INSERT/UPDATE must also update the index — over-indexing slows writes and eats space.</li>
+      <li><code>WHERE YEAR(created_at) = 2026</code> can't use the index on created_at — functions on the column defeat it. Rewrite as a range: <code>created_at &gt;= '2026-01-01' AND created_at &lt; '2027-01-01'</code>.</li>
+      <li>Composite index (a, b) helps queries filtering on a, or a+b — but NOT b alone (leftmost-prefix rule).</li>
+    </ul>
+
+    <h2 style="color:var(--teal)">The SQL command families</h2>
+    <pre>DDL (structure):  CREATE, ALTER, DROP, TRUNCATE
+DML (data):       SELECT, INSERT, UPDATE, DELETE
+DCL (access):     GRANT, REVOKE
+TCL (txns):       BEGIN/COMMIT/ROLLBACK</pre>
+    <div class="trap"><b>GOTCHA</b> · DELETE removes rows one by one (can be rolled back, fires triggers); TRUNCATE resets the whole table instantly (DDL, usually no rollback); DROP deletes the table itself.</div>
+
+    <h2 style="color:var(--teal)">Views & other objects worth recognizing</h2>
+    <p><b>View</b> = a saved query that acts like a table (no storage; always fresh). <b>Materialized view</b> = the results physically stored and refreshed — faster reads, can be stale. This exact pair is dbt's view vs table materializations. A <b>schema</b> is a namespace grouping tables; a <b>stored procedure</b> is saved procedural code in the DB (rare in modern DE — dbt took its job).</p>
+
+    <h2 style="color:var(--teal)">Beyond relational — 30-second map</h2>
+    <p>NoSQL families and when they fit: <b>key-value</b> (Redis — caching, sessions), <b>document</b> (MongoDB — flexible JSON records), <b>wide-column</b> (Cassandra — huge write-heavy workloads), <b>graph</b> (Neo4j — relationship-heavy queries). Relational remains the default when data is structured and consistency matters — which is most DE work.</p>
+  </div>
+
+  <!-- ─────────── SQL NOTES TAB ─────────── -->
+  <div id="tab-sql" class="notes hidden">
+    <h2 class="accent-sql">Absolute basics — before your first drill</h2>
+    <pre>-- the skeleton (write in this order)
+SELECT   name, COUNT(*) AS cnt      -- AS gives an alias
+FROM     orders
+WHERE    status = 'paid'            -- filters ROWS (before grouping)
+GROUP BY name
+HAVING   COUNT(*) > 3               -- filters GROUPS (after grouping)
+ORDER BY cnt DESC                   -- DESC = biggest first
+LIMIT    5;                         -- top 5 rows (LIMIT 5 OFFSET 10 skips 10)</pre>
+    <p>But SQL <b>executes</b> in a different order: FROM → WHERE → GROUP BY → HAVING → SELECT → ORDER BY → LIMIT. That's why a column alias made in SELECT can't be used in WHERE — WHERE runs first.</p>
+    <pre>-- filtering toolbox
+WHERE age BETWEEN 18 AND 30      -- INCLUSIVE on BOTH ends (unlike Python range!)
+WHERE city IN ('Pune', 'Delhi')
+WHERE name LIKE 'A%'             -- % = any chars, _ = exactly one char
+WHERE email IS NULL              -- never  = NULL
+WHERE NOT (a AND b)              -- AND binds tighter than OR: use parentheses
+-- strings use 'single quotes'; -- starts a comment</pre>
+    <pre>-- aggregates (they IGNORE NULLs, except COUNT(*))
+COUNT(*)         -- all rows
+COUNT(col)       -- rows where col is not NULL
+COUNT(DISTINCT col)
+SUM(x)  AVG(x)  MIN(x)  MAX(x)
+SELECT DISTINCT city FROM users;    -- unique values</pre>
+    <div class="trap"><b>GOTCHA</b> · Every column in SELECT must either be inside an aggregate (SUM, COUNT…) or listed in GROUP BY. Mixing them freely is the #1 beginner error.</div>
+    <div class="trap"><b>GOTCHA</b> · BETWEEN is inclusive of both ends — the opposite instinct from Python's range/slicing. Date BETWEEN '2026-01-01' AND '2026-01-31' includes both dates.</div>
+
+    <h2 class="accent-sql">Joins — which one and why</h2>
+    <p><b>INNER</b> keeps only matches. <b>LEFT</b> keeps every left row (missing right side becomes NULL) — use whenever the question says "including those without…". <b>Self join</b> = same table twice with aliases (employee↔manager, today↔yesterday). <b>CROSS</b> = all combinations (calendar × products for filling gaps).</p>
+    <pre>-- self join: compare a row to "yesterday's" row
+SELECT w1.id FROM Weather w1
+JOIN Weather w2 ON DATEDIFF(w1.recordDate, w2.recordDate) = 1
+WHERE w1.temperature > w2.temperature;</pre>
+    <div class="trap"><b>TRAP</b> · Filtering the right table in WHERE turns a LEFT JOIN into an INNER JOIN. Put the filter in the ON clause to keep unmatched rows.</div>
+
+    <h2 class="accent-sql">NULL logic</h2>
+    <p>NULL fails every comparison: <code>x != 2</code> silently drops NULL rows. Use <code>IS NULL / IS NOT NULL</code>, <code>COALESCE(x, fallback)</code>, and <code>IFNULL</code>. Aggregates ignore NULLs (COUNT(col) skips them; COUNT(*) doesn't).</p>
+    <div class="trap"><b>TRAP</b> · <code>NOT IN (subquery)</code> returns nothing if the subquery contains a single NULL. Use <code>NOT EXISTS</code> or filter NULLs inside the subquery.</div>
+
+    <h2 class="accent-sql">Aggregation, HAVING, conditional counts</h2>
+    <pre>-- WHERE filters rows, HAVING filters groups
+SELECT managerId FROM Employee
+GROUP BY managerId HAVING COUNT(*) >= 5;
+
+-- conditional aggregation: pivot logic without pivots
+SUM(CASE WHEN state='approved' THEN amount ELSE 0 END)
+AVG(action = 'confirmed')          -- avg of boolean = the RATE
+COUNT(DISTINCT CASE WHEN x THEN id END)</pre>
+    <p>The <code>AVG(condition)</code> trick answers most "percentage of…" questions in one line.</p>
+
+    <h2 class="accent-sql">Window functions — the DE interview core</h2>
+    <pre>ROW_NUMBER() OVER (PARTITION BY dept ORDER BY salary DESC)  -- 1,2,3,4
+RANK()       -- 1,1,3 (gaps after ties)
+DENSE_RANK() -- 1,1,2 (no gaps)  ← "top N per group" questions
+
+LAG(x)  OVER (ORDER BY d)   -- previous row's value
+LEAD(x) OVER (ORDER BY d)   -- next row's value
+
+SUM(x) OVER (ORDER BY d)                             -- running total
+AVG(x) OVER (ORDER BY d ROWS BETWEEN 6 PRECEDING
+             AND CURRENT ROW)                        -- 7-day rolling</pre>
+    <p>Pattern for "top N per group": window in a CTE, filter <code>rn &lt;= N</code> outside — you can't put a window function in WHERE.</p>
+
+    <h2 class="accent-sql">Dedup patterns</h2>
+    <pre>-- keep one row per key
+WITH ranked AS (
+  SELECT *, ROW_NUMBER() OVER (
+    PARTITION BY email ORDER BY updated_at DESC) rn
+  FROM users)
+SELECT * FROM ranked WHERE rn = 1;</pre>
+
+    <h2 class="accent-sql">Gaps &amp; islands (consecutive runs)</h2>
+    <pre>-- id - ROW_NUMBER() is constant within a consecutive run
+SELECT *, id - ROW_NUMBER() OVER (ORDER BY id) AS grp
+FROM t;   -- GROUP BY grp, keep groups HAVING COUNT(*) >= 3</pre>
+
+    <h2 class="accent-sql">Dates & strings (MySQL flavor)</h2>
+    <pre>DATE_FORMAT(d, '%Y-%m')   DATEDIFF(a, b)   DATE_ADD(d, INTERVAL 1 DAY)
+CONCAT(a, b)   UPPER/LOWER   LEFT(s, n)   SUBSTRING(s, 2)   LENGTH(s)
+GROUP_CONCAT(DISTINCT p ORDER BY p)        -- string agg per group
+col REGEXP '^[A-Za-z][A-Za-z0-9._-]*@leetcode\\.com$'</pre>
+
+    <h2 class="accent-sql">CTE habits (dbt style)</h2>
+    <p>One CTE per logical step, named after what it produces (<code>daily_orders</code>, <code>ranked_users</code>). Read top to bottom like a pipeline. If a CTE does two things, split it.</p>
+
+    <h2 class="accent-sql">Quick trap list</h2>
+    <ul>
+      <li>Join fanout: joining 1-to-many then SUM → inflated numbers. Aggregate BEFORE joining.</li>
+      <li>Integer division: <code>3/2 = 1</code> in some engines — multiply by 1.0 first.</li>
+      <li>GROUP BY must include every non-aggregated select column.</li>
+      <li>ORDER BY tie-breakers: read the question — "smallest id if tie" is almost always there.</li>
+      <li>ROUND(x, 2) — LeetCode checks decimals exactly.</li>
+    </ul>
+  </div>
+
+  <!-- ─────────── PYTHON NOTES TAB ─────────── -->
+  <div id="tab-py" class="notes hidden">
+    <h2 class="accent-py">Absolute basics — rusty-fingers refresher</h2>
+    <pre># creating things
+lst = []            lst = [0] * 5        lst = list(range(5))   # [0,1,2,3,4]
+d   = {}            d = {"a": 1}         # {} is an EMPTY DICT, never a set!
+s   = set()         s = {1, 2, 3}        # empty set MUST be set()
+t   = (1, 2)        # tuple: immutable</pre>
+    <pre># list: the methods you actually use
+lst.append(x)       # add ONE item at the END  ← (not insert!)
+lst.insert(i, x)    # add at position i (shifts everything right, O(n))
+lst.extend(other)   # add MANY items;  lst += other does the same
+lst.pop()           # remove & return LAST item, O(1)
+lst.pop(0)          # remove FIRST — O(n), use deque if doing this a lot
+lst.remove(val)     # delete first matching VALUE (error if absent)
+lst.sort()          # in place, returns None!   new = sorted(lst) returns a copy
+lst.reverse()       lst.count(x)        lst.index(x)        x in lst</pre>
+    <div class="trap"><b>GOTCHA</b> · <code>lst.sort()</code> returns None — <code>a = lst.sort()</code> gives you None, not a sorted list. Use <code>a = sorted(lst)</code>.</div>
+    <pre># range: upper limit is EXCLUDED
+range(5)            # 0,1,2,3,4          (NOT 5)
+range(2, 8)         # 2,3,4,5,6,7        (NOT 8)
+range(0, 10, 2)     # 0,2,4,6,8
+range(n-1, -1, -1)  # n-1 ... 0 — walk backwards
+for i in range(len(lst)): ...           # index loop
+for i, x in enumerate(lst): ...         # index + value (prefer this)</pre>
+    <pre># slicing: end index EXCLUDED (same rule as range)
+a[1:4]     # items 1,2,3
+a[:3]      # first three          a[3:]   # from index 3 to end
+a[-1]      # last item            a[-3:]  # last three
+a[::-1]    # reversed copy        a[:]    # shallow copy
+a[::2]     # every 2nd item</pre>
+    <pre># strings are IMMUTABLE — you can't do s[0] = "x"
+parts = []                    # build a list, join once at the end
+parts.append("hi")
+result = "".join(parts)       # NOT result += ch in a big loop
+s.lower()  s.upper()  s.strip()  s.split(",")  s.replace(a, b)
+s.startswith("ab")   s.find("x")   # find returns -1 if absent, index() errors
+ord("a")=97   chr(97)="a"    str(5)="5"    int("5")=5</pre>
+    <pre># dict essentials
+d[k] = v            d[k]                 # KeyError if missing!
+d.get(k)            d.get(k, 0)          # safe, with default
+k in d              # checks KEYS
+del d[k]            d.pop(k, None)       # safe delete
+for k, v in d.items(): ...
+list(d.keys())      list(d.values())</pre>
+    <pre># set essentials
+s.add(x)            s.remove(x)          # error if absent
+s.discard(x)        # no error if absent
+a | b  (union)      a & b  (common)      a - b  (in a not b)</pre>
+    <pre># small things that trip everyone
+a, b = b, a                  # swap, no temp var
+7 // 2 == 3    7 / 2 == 3.5  # // floor-divides, / always gives float
+7 % 2 == 1                   # remainder
+max(a) min(a) sum(a) len(a) abs(x)
+x = y = []                   # BOTH names point to the SAME list
+grid = [[0]*3 for _ in range(3)]   # correct 2D init
+grid = [[0]*3]*3                   # WRONG — 3 references to one row</pre>
+    <div class="trap"><b>GOTCHA</b> · <code>b = a</code> does NOT copy a list — both names point to the same object. Copy with <code>b = a[:]</code> or <code>list(a)</code>.</div>
+
+    <h2 class="accent-py">Core structures & complexity</h2>
+    <pre>list  : append O(1), pop() O(1), pop(0) O(n), x in list O(n)
+dict  : get/set/in O(1)          set : add/in O(1)
+d.get(k, default)    d.setdefault(k, [])    for k, v in d.items()</pre>
+    <p>If you're checking membership in a loop, it should be a set. If you're counting, it should be a Counter. If you're grouping, it should be a defaultdict(list). Those three reflexes solve half of all drills.</p>
+
+    <h2 class="accent-py">collections — the DE toolbox</h2>
+    <pre>from collections import Counter, defaultdict, deque, OrderedDict
+Counter(s)                      # frequency map
+Counter(a) - Counter(b)         # coverage check (ransom note)
+Counter(x).most_common(k)       # top-k
+defaultdict(list)[key].append(v)  # grouping without KeyError
+deque: popleft() O(1)           # queues / BFS / sliding window
+OrderedDict.move_to_end(k); popitem(last=False)   # LRU cache</pre>
+
+    <h2 class="accent-py">Sorting with keys</h2>
+    <pre>sorted(words, key=lambda w: (-count[w], w))  # count desc, alpha asc
+sorted(intervals)                            # sorts by first element
+tuple(sorted(word))                          # canonical anagram key</pre>
+
+    <h2 class="accent-py">Two pointers</h2>
+    <pre># sorted array pair-sum / 3Sum inner loop
+l, r = 0, len(a) - 1
+while l < r:
+    s = a[l] + a[r]
+    if s == target: ...
+    elif s < target: l += 1
+    else: r -= 1
+# also: slow/fast write-read pointers for in-place edits</pre>
+
+    <h2 class="accent-py">Sliding window</h2>
+    <pre>seen, l, best = set(), 0, 0
+for r, ch in enumerate(s):
+    while ch in seen:            # shrink until valid
+        seen.remove(s[l]); l += 1
+    seen.add(ch)
+    best = max(best, r - l + 1)</pre>
+
+    <h2 class="accent-py">Prefix sums (running totals in Python)</h2>
+    <pre>count, pref, seen = 0, 0, {0: 1}
+for x in nums:
+    pref += x
+    count += seen.get(pref - k, 0)   # subarrays summing to k
+    seen[pref] = seen.get(pref, 0) + 1</pre>
+
+    <h2 class="accent-py">Stack patterns</h2>
+    <pre># matching pairs
+pairs = {')':'(', ']':'[', '}':'{'}
+# monotonic stack (next warmer day)
+stack = []                      # holds indices
+for i, t in enumerate(temps):
+    while stack and t > temps[stack[-1]]:
+        j = stack.pop(); ans[j] = i - j
+    stack.append(i)</pre>
+
+    <h2 class="accent-py">Heaps (top-k / streams)</h2>
+    <pre>import heapq
+heapq.nlargest(k, nums)                 # quick top-k
+heapq.nsmallest(k, pts, key=f)          # with a key
+# fixed-size min-heap for streaming kth largest:
+heapq.heappush(h, x)
+if len(h) > k: heapq.heappop(h)         # h[0] = answer</pre>
+
+    <h2 class="accent-py">Idioms worth drilling</h2>
+    <pre>for i, x in enumerate(nums): ...
+for a, b in zip(xs, ys): ...
+s.split('/')   ' '.join(parts)   s.strip()
+[f(x) for x in xs if cond]      {k: v for ...}
+set(range(1, n+1)) - set(nums)   # missing values</pre>
+
+    <h2 class="accent-py">DE-flavored Python (beyond LeetCode)</h2>
+    <pre>import json, requests
+r = requests.get(url, params=p, timeout=30)
+r.raise_for_status()
+data = r.json()
+# pagination loop
+while url:
+    page = requests.get(url).json()
+    rows += page['results']
+    url = page.get('next')
+with open('out.json', 'w') as f: json.dump(rows, f)</pre>
+    <div class="trap"><b>HABIT</b> · In pipeline code always: timeouts on requests, retry with backoff, log rows in/out, never hardcode secrets (use os.environ).</div>
+  </div>
+</div>
+
+  <!-- ─────────── MY NOTES TAB ─────────── -->
+  <div id="tab-notes" class="notes hidden">
+    <h2 style="color:var(--teal)">My notes — stuck points, reattempt focus, revision tips</h2>
+    <p style="margin-bottom:12px">Saved in this browser alongside your progress. Tag a note with a day or topic so future-you can filter by eye. Good notes to keep: <i>what confused me</i>, <i>what to try first on reattempt</i>, <i>the one-liner that unlocked it</i>.</p>
+    <div class="note-form">
+      <input id="noteTag" class="note-tag-input" placeholder="tag (e.g. Day 07, windows, dbt)" maxlength="40">
+      <textarea id="noteText" class="note-text-input" rows="3" placeholder="e.g. Day 07 — forgot DATEDIFF arg order; on reattempt try LAG first before self-join"></textarea>
+      <div class="note-form-row">
+        <button id="noteSave" class="note-save">save note</button>
+        <button id="noteCancel" class="note-cancel hidden">cancel edit</button>
+      </div>
+    </div>
+    <div id="notesList"></div>
+  </div>
+
+<div class="quiz-overlay hidden" id="quizOverlay">
+  <div class="quiz-box">
+    <div class="quiz-hdr">
+      <span class="quiz-title" id="quizTitle">QUICK CHECK</span>
+      <span class="quiz-prog" id="quizProg">1 / 3</span>
+    </div>
+    <p class="quiz-q" id="quizQ"></p>
+    <div class="quiz-a hidden" id="quizA"></div>
+    <div class="quiz-actions" id="quizActions"></div>
+    <button class="quiz-skip" id="quizSkip">skip the check, just mark done</button>
+  </div>
+</div>
+<script>
+const LC = (slug) => `https://leetcode.com/problems/${slug}/`;
+
+const PHASES = [
+  {
+    name: "Data Systems Foundations",
+    tag: "how warehouses think",
+    days: [
+      { t: "OLTP vs OLAP · row vs columnar storage", n: "OLTP = many small transactions, normalized, row storage (read/write whole rows fast). OLAP = analytics, denormalized, columnar storage (scan only needed columns, compresses well). Warehouses are OLAP. This one distinction explains most DE tool choices.",
+        s: { q: "175 · Combine Two Tables", u: LC("combine-two-tables"), n: "LEFT JOIN keeps all rows from the left table; missing matches become NULL. Never use INNER JOIN when the question says 'whether or not'." },
+        p: { q: "1 · Two Sum", u: LC("two-sum"), n: "Store seen values in a dict {value: index}. For each x, check if target−x is already in the dict. O(n) one pass." } },
+      { t: "Warehouse vs data lake vs lakehouse", n: "Warehouse = structured, schema-on-write, SQL-first (Snowflake, BigQuery). Lake = cheap object storage of raw files, schema-on-read (S3 + Parquet). Lakehouse = lake storage + warehouse features via table formats (Delta, Iceberg).",
+        s: { q: "176 · Second Highest Salary", u: LC("second-highest-salary"), n: "Subquery with MAX(salary) < max, or DISTINCT + ORDER BY + LIMIT 1 OFFSET 1 wrapped in SELECT so empty result returns NULL." },
+        p: { q: "217 · Contains Duplicate", u: LC("contains-duplicate"), n: "len(set(nums)) != len(nums). Sets give O(1) membership checks — your default dedup tool." } },
+      { t: "Dimensional modeling · star schema, facts & dimensions", n: "Fact table = events/measurements (orders, clicks) with foreign keys + numeric measures. Dimensions = descriptive context (customer, product, date). Star schema = one fact surrounded by dimensions. Optimized for joins analysts actually write.",
+        s: { q: "181 · Employees Earning More Than Managers", u: LC("employees-earning-more-than-their-managers"), n: "Self join: FROM emp e JOIN emp m ON e.managerId = m.id WHERE e.salary > m.salary. One table, two aliases." },
+        p: { q: "242 · Valid Anagram", u: LC("valid-anagram"), n: "collections.Counter(s) == Counter(t). Counter is the DE workhorse for frequency problems." } },
+      { t: "Fact table types & grain", n: "Grain = what one row represents; decide it FIRST. Transaction facts (one row per event), periodic snapshots (one row per entity per period, e.g. daily balance), accumulating snapshots (one row per process, updated as it moves, e.g. order lifecycle).",
+        s: { q: "184 · Department Highest Salary", u: LC("department-highest-salary"), n: "Join to a subquery of (dept, MAX(salary)), or use a window: MAX(salary) OVER (PARTITION BY dept)." },
+        p: { q: "383 · Ransom Note", u: LC("ransom-note"), n: "Counter(magazine) must cover Counter(note): Counter subtraction — not (Counter(note) - Counter(mag))." } },
+      { t: "Slowly Changing Dimensions (SCD 1 / 2 / 3)", n: "How to handle dimension changes (customer moves city). Type 1 = overwrite, history lost. Type 2 = add a new row with valid_from/valid_to + is_current flag — the interview favorite. Type 3 = extra column for previous value.",
+        s: { q: "178 · Rank Scores", u: LC("rank-scores"), n: "DENSE_RANK() OVER (ORDER BY score DESC) — no gaps after ties. RANK() leaves gaps; ROW_NUMBER() ignores ties." },
+        p: { q: "205 · Isomorphic Strings", u: LC("isomorphic-strings"), n: "Two dicts mapping s→t and t→s; both directions must stay consistent." } },
+      { t: "Keys & normalization vs denormalization", n: "Natural key = business value (email); surrogate key = meaningless generated ID — warehouses prefer surrogates (stable, joins fast, enables SCD2). Normalize in OLTP to avoid update anomalies; denormalize in OLAP to avoid join cost.",
+        s: { q: "196 · Delete Duplicate Emails", u: LC("delete-duplicate-emails"), n: "DELETE p1 FROM Person p1 JOIN Person p2 ON p1.email = p2.email AND p1.id > p2.id — keep smallest id." },
+        p: { q: "290 · Word Pattern", u: LC("word-pattern"), n: "Same as isomorphic strings but split() the sentence first. Check lengths match before mapping." } },
+      { t: "Hands-on: warehouse sandbox + your first star schema", n: "Open a free BigQuery sandbox or Snowflake trial. Load any CSV you like (your own work data is best). Split it into 1 fact + 2–3 dimension tables, write 3 analyst queries against it. Feeling the join pattern beats reading about it.",
+        s: { q: "197 · Rising Temperature", u: LC("rising-temperature"), n: "Self join on date difference of 1 day. In MySQL: DATEDIFF(w1.date, w2.date) = 1. Compare temperatures across the join." },
+        p: { q: "387 · First Unique Character", u: LC("first-unique-character-in-a-string"), n: "Counter first, then loop the string in order and return the first index with count 1." } },
+      { t: "File formats: CSV vs JSON vs Parquet vs Avro", n: "CSV = human-readable, no types, slow. JSON = nested, verbose. Parquet = columnar + compressed + typed — the analytics default. Avro = row-based with schema, good for streaming/Kafka. Rule of thumb: Parquet for analytics, Avro for pipes.",
+        s: { q: "180 · Consecutive Numbers", u: LC("consecutive-numbers"), n: "LAG(num,1) and LAG(num,2) OVER (ORDER BY id), then filter where all three match. DISTINCT the result." },
+        p: { q: "49 · Group Anagrams", u: LC("group-anagrams"), n: "Dict keyed by tuple(sorted(word)); append words to each key. defaultdict(list) keeps it clean." } },
+    ],
+  },
+  {
+    name: "dbt + Git · SQL as Software",
+    tag: "your bridge skill",
+    days: [
+      { t: "Git properly: branch → commit → PR → merge", n: "DE work lives in repos. Core loop: git checkout -b feature-x → edit → git add -p → commit with a real message → push → open PR. Learn to read a diff and resolve a merge conflict by hand once — it demystifies everything.",
+        s: { q: "570 · Managers with ≥5 Reports", u: LC("managers-with-at-least-5-direct-reports"), n: "GROUP BY managerId HAVING COUNT(*) >= 5, then join back to get names. HAVING filters after aggregation." },
+        p: { q: "14 · Longest Common Prefix", u: LC("longest-common-prefix"), n: "zip(*strs) walks all strings column by column; stop when a column has more than one unique char." } },
+      { t: "dbt setup: models, ref(), materializations", n: "A dbt model = one SELECT in a .sql file; dbt builds it as a view or table. ref('other_model') declares dependency — dbt infers the DAG and runs things in order. Materializations: view (cheap, always fresh) vs table (fast to query).",
+        s: { q: "577 · Employee Bonus", u: LC("employee-bonus"), n: "LEFT JOIN then WHERE bonus < 1000 OR bonus IS NULL — NULLs fail every comparison unless handled explicitly." },
+        p: { q: "26 · Remove Duplicates (sorted)", u: LC("remove-duplicates-from-sorted-array"), n: "Two pointers: slow marks the write position, fast scans. Write only when value changes. In-place patterns matter." } },
+      { t: "dbt layers: staging → intermediate → marts", n: "Staging models = 1:1 with source tables, rename/cast only. Intermediate = reusable joins/logic. Marts = final fact/dim tables analysts query. Declare raw tables as sources in YAML. This layering is what 'clean pipelines' means in practice.",
+        s: { q: "584 · Find Customer Referee", u: LC("find-customer-referee"), n: "referee_id != 2 OR referee_id IS NULL. Classic NULL trap — != 2 silently drops NULL rows." },
+        p: { q: "88 · Merge Sorted Array", u: LC("merge-sorted-array"), n: "Merge from the END (largest first) to avoid overwriting nums1. Three pointers moving backwards." } },
+      { t: "dbt tests + documentation", n: "Generic tests in YAML: unique, not_null, accepted_values, relationships (FK check). Singular tests = a SQL file that should return zero rows. dbt docs generate builds a browsable lineage graph. Tested + documented models are the whole point of dbt.",
+        s: { q: "586 · Customer With Most Orders", u: LC("customer-placing-the-largest-number-of-orders"), n: "GROUP BY + ORDER BY COUNT(*) DESC LIMIT 1 — or a window RANK if ties matter." },
+        p: { q: "169 · Majority Element", u: LC("majority-element"), n: "Counter(nums).most_common(1), or Boyer-Moore voting for O(1) space if asked to optimize." } },
+      { t: "dbt incremental models + snapshots (SCD2 live)", n: "Incremental = only process new rows: WHERE updated_at > (SELECT MAX(updated_at) FROM {{ this }}) inside an is_incremental() block. Snapshots = dbt's built-in SCD Type 2 — it manages valid_from/valid_to for you. Connect this to what you learned in Phase 1.",
+        s: { q: "602 · Friend Requests II", u: LC("friend-requests-ii-who-has-the-most-friends"), n: "UNION ALL both directions (requester + accepter) into one column, then GROUP BY and count." },
+        p: { q: "448 · Disappeared Numbers", u: LC("find-all-numbers-disappeared-in-an-array"), n: "set(range(1, n+1)) - set(nums). Set difference solves whole categories of 'missing data' checks." } },
+      { t: "Jinja + macros: DRY SQL", n: "dbt SQL is templated with Jinja: {% for %} loops to generate repeated CASE statements, macros = reusable SQL functions, variables per environment. Don't over-engineer — but knowing it exists stops you writing 400-line copy-paste SQL.",
+        s: { q: "608 · Tree Node", u: LC("tree-node"), n: "CASE: p_id IS NULL → Root; id IN (SELECT p_id …) → Inner; else Leaf. Order of conditions matters." },
+        p: { q: "121 · Best Time to Buy/Sell Stock", u: LC("best-time-to-buy-and-sell-stock"), n: "Track running minimum price; best profit = max(profit, price − min_so_far). One pass." } },
+      { t: "CTEs vs subqueries vs temp tables", n: "CTEs (WITH blocks) = readable, self-documenting steps — the dbt house style. Subqueries fine when tiny. Temp tables when you reuse an expensive intermediate many times. Readability is a feature: pipelines are read 100× more than written.",
+        s: { q: "626 · Exchange Seats", u: LC("exchange-seats"), n: "CASE on id parity: odd id gets id+1 (unless it's the last odd row), even id gets id−1. Or self-join on id XOR 1 logic." },
+        p: { q: "238 · Product Except Self", u: LC("product-of-array-except-self"), n: "Two passes: prefix products left→right, then multiply suffix products right→left. No division." } },
+      { t: "Mini-project: rebuild a work analysis as a dbt project", n: "Take one analysis you've done at work. Recreate it: sources → staging → marts, with tests + docs, in a GitHub repo with a README. This repo is portfolio item #1 and proves you can do engineering, not just queries.",
+        s: { q: "585 · Investments in 2016", u: LC("investments-in-2016"), n: "Window counts: COUNT(*) OVER (PARTITION BY tiv_2015) > 1 and COUNT(*) OVER (PARTITION BY lat, lon) = 1. Filter, then SUM." },
+        p: { q: "56 · Merge Intervals", u: LC("merge-intervals"), n: "Sort by start. If current start ≤ last end, extend last end; else append. Shows up constantly in session/date-range logic." } },
+    ],
+  },
+  {
+    name: "Docker, Airflow & Pipelines",
+    tag: "the core of the job",
+    days: [
+      { t: "Docker: images, containers, Dockerfile", n: "Image = frozen recipe (OS + deps + code); container = a running instance of it. Dockerfile: FROM base → COPY code → RUN pip install → CMD. Volumes persist data, ports expose services. DE tooling assumes Docker — learn just enough to be dangerous.",
+        s: { q: "1045 · Bought All Products", u: LC("customers-who-bought-all-products"), n: "GROUP BY customer HAVING COUNT(DISTINCT product_key) = (SELECT COUNT(*) FROM Product). Relational division pattern." },
+        p: { q: "20 · Valid Parentheses", u: LC("valid-parentheses"), n: "Stack + a dict of closing→opening pairs. Push opens, pop and compare on closes." } },
+      { t: "docker-compose: run Postgres locally", n: "compose = multi-container setup in one YAML: services, ports, volumes, env vars. Spin up Postgres, connect with a client, load a table. You'll reuse this exact skill to run Airflow tomorrow — and at every job.",
+        s: { q: "1070 · Product Sales Analysis III", u: LC("product-sales-analysis-iii"), n: "First year per product: ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY year) = 1, or join to MIN(year) subquery." },
+        p: { q: "155 · Min Stack", u: LC("min-stack"), n: "Store tuples (value, min_so_far) so getMin is O(1). Design questions test state management, not algorithms." } },
+      { t: "Airflow concepts: DAGs, tasks, scheduler", n: "DAG = your pipeline as a graph of tasks with dependencies (t1 >> t2). Scheduler triggers runs per schedule; each run has a logical date. Operators = task types (Python, Bash, SQL). Key mental shift: define WHAT runs and in what order; Airflow decides WHEN.",
+        s: { q: "1141 · User Activity Past 30 Days", u: LC("user-activity-for-the-past-30-days-i"), n: "WHERE activity_date BETWEEN '2019-06-28' AND '2019-07-27', COUNT(DISTINCT user_id) GROUP BY date." },
+        p: { q: "71 · Simplify Path", u: LC("simplify-path"), n: "split('/'), use a stack: '..' pops, '.' and '' skip, else push. Join with '/'." } },
+      { t: "Hands-on: run Airflow with docker-compose, write DAG #1", n: "Use the official Airflow docker-compose file. Write a 3-task DAG: pull data from a free API → save to disk → load to your local Postgres. Watch it run in the UI, read the task logs, make it fail on purpose and read THAT log too.",
+        s: { q: "1158 · Market Analysis I", u: LC("market-analysis-i"), n: "LEFT JOIN orders filtered to 2019 IN THE JOIN CONDITION, not WHERE — else you lose zero-order users." },
+        p: { q: "394 · Decode String", u: LC("decode-string"), n: "Stack of (current_string, repeat_count); on ']' pop and multiply. Nested structure = stack." } },
+      { t: "ETL vs ELT · extracting from APIs", n: "Modern default is ELT: land raw data first, transform in the warehouse (with dbt). Extraction realities: pagination (loop until no next page), rate limits (backoff + sleep), auth headers, retries. Python requests library + patience.",
+        s: { q: "1164 · Product Price at Given Date", u: LC("product-price-at-a-given-date"), n: "Latest change ≤ date per product (ROW_NUMBER or MAX(change_date)), default price 10 for products with no change yet — UNION or COALESCE." },
+        p: { q: "706 · Design HashMap", u: LC("design-hashmap"), n: "Buckets = list of lists; index = hash(key) % size; each bucket holds (key, value) pairs. Understand what dict does under the hood." } },
+      { t: "Loading patterns: full vs incremental, merge/upsert", n: "Full refresh = truncate + reload (simple, fine for small tables). Incremental = load only new/changed rows using a watermark (max updated_at). Upsert/MERGE = insert new keys, update existing. Choosing wrong here is the #1 source of slow, broken pipelines.",
+        s: { q: "1174 · Immediate Food Delivery II", u: LC("immediate-food-delivery-ii"), n: "First order per customer = MIN(order_date); AVG(order_date = customer_pref_date) trick turns a boolean into a rate." },
+        p: { q: "622 · Design Circular Queue", u: LC("design-circular-queue"), n: "Fixed list + head index + count; index math with % capacity. Ring buffers appear in streaming systems." } },
+      { t: "Idempotency, retries, backfills, catchup", n: "Idempotent = running a task twice gives the same result (DELETE+INSERT for the partition, or MERGE — never blind INSERT). This is what makes retries and backfills safe. Airflow: retries + retry_delay on tasks, catchup=False unless you want history runs.",
+        s: { q: "1193 · Monthly Transactions I", u: LC("monthly-transactions-i"), n: "GROUP BY DATE_FORMAT(trans_date,'%Y-%m'), country. Conditional aggregation: SUM(state='approved'), SUM(IF(state='approved', amount, 0))." },
+        p: { q: "739 · Daily Temperatures", u: LC("daily-temperatures"), n: "Monotonic stack of indices; pop while current temp is warmer, answer = index gap." } },
+      { t: "Data quality checks in pipelines", n: "Trust is the product. Check at load time: row counts vs source, nulls in key columns, freshness (max timestamp recent?), referential integrity, duplicates. Fail loudly or quarantine bad rows to a dead-letter table. Tools: dbt tests, Great Expectations / Soda (concept level).",
+        s: { q: "1204 · Last Person to Fit in Bus", u: LC("last-person-to-fit-in-the-bus"), n: "Running total: SUM(weight) OVER (ORDER BY turn) ≤ 1000, take max turn. Cumulative windows are everywhere in DE." },
+        p: { q: "560 · Subarray Sum Equals K", u: LC("subarray-sum-equals-k"), n: "Prefix sums + dict of {prefix: count}; answer += counts[prefix − k]. The Python twin of running totals." } },
+      { t: "Logging, alerting, SLAs", n: "Every task should log: rows in, rows out, duration, watermark used. Alert on failure (Slack/email callbacks in Airflow), not just silently retry forever. SLA = 'data ready by 7am' — the contract analysts (you, until recently) depend on.",
+        s: { q: "1321 · Restaurant Growth", u: LC("restaurant-growth"), n: "Aggregate to daily first, then SUM/AVG OVER (ORDER BY date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), skip first 6 days." },
+        p: { q: "53 · Maximum Subarray", u: LC("maximum-subarray"), n: "Kadane: current = max(x, current + x); best = max(best, current)." } },
+      { t: "CAPSTONE PART 1 · end-to-end local pipeline", n: "Build: API → raw files (Parquet) → Postgres/warehouse → dbt transforms → orchestrated by Airflow on a daily schedule, incremental + idempotent, with one quality check. This single project ≈ 60% of the actual job. Take a week on it if needed — the flow pauses, that's fine.",
+        s: { q: "1341 · Movie Rating", u: LC("movie-rating"), n: "Two separate queries UNION'd: top rater by count, top movie by avg in Feb 2020 — both ORDER BY metric DESC, name ASC LIMIT 1." },
+        p: { q: "146 · LRU Cache", u: LC("lru-cache"), n: "OrderedDict: move_to_end on access, popitem(last=False) on evict. A genuinely common DE interview question — caching is real infra." } },
+    ],
+  },
+  {
+    name: "Spark & Streaming",
+    tag: "scale beyond one machine",
+    days: [
+      { t: "Why Spark: driver, executors, lazy evaluation", n: "When data exceeds one machine, Spark splits it into partitions processed by executors, coordinated by a driver. Transformations are LAZY — nothing runs until an action (count, write, collect). Spark builds an optimized plan first. Also know when Spark is overkill: <10GB, just use SQL/pandas.",
+        s: { q: "550 · Game Play Analysis IV", u: LC("game-play-analysis-iv"), n: "First login per player (MIN over partition), then check if login exists at first_date + 1. Divide by total players — ROUND(...,2)." },
+        p: { q: "347 · Top K Frequent Elements", u: LC("top-k-frequent-elements"), n: "Counter(nums).most_common(k). Know the heapq.nlargest version too." } },
+      { t: "PySpark DataFrame API hands-on", n: "Databricks Community Edition (free) or pip install pyspark. Core verbs: select, filter, withColumn, groupBy.agg, join, orderBy. It's deliberately SQL-like — your analyst brain transfers directly. Also try spark.sql('...') on a temp view.",
+        s: { q: "1393 · Capital Gain/Loss", u: LC("capital-gainloss"), n: "SUM(CASE WHEN operation='Sell' THEN price ELSE -price END) GROUP BY stock_name." },
+        p: { q: "692 · Top K Frequent Words", u: LC("top-k-frequent-words"), n: "Sort by (-count, word) — negative count for descending, word for alphabetical ties. Custom sort keys are gold." } },
+      { t: "Transformations vs actions · narrow vs wide · shuffles", n: "Narrow transformation (filter, map) = each partition works alone. Wide (groupBy, join, distinct) = data must SHUFFLE across the network — the expensive part. Performance tuning in Spark ≈ minimizing and managing shuffles.",
+        s: { q: "1907 · Count Salary Categories", u: LC("count-salary-categories"), n: "Three category counts must all appear even when zero: UNION ALL three SELECTs, or a categories CTE LEFT JOINed to counts." },
+        p: { q: "215 · Kth Largest Element", u: LC("kth-largest-element-in-an-array"), n: "heapq.nlargest(k, nums)[-1], or maintain a min-heap of size k for streams." } },
+      { t: "Partitioning, caching, broadcast joins, skew", n: "repartition/coalesce control parallelism. cache() reused DataFrames. Broadcast join = ship the small table to every executor, skipping the shuffle (huge win for fact-to-dim joins). Skew = one hot key overloads one executor — salt keys or use AQE.",
+        s: { q: "1934 · Confirmation Rate", u: LC("confirmation-rate"), n: "LEFT JOIN then AVG(action='confirmed') — AVG of a boolean IS the rate. COALESCE/ROUND to 2." },
+        p: { q: "973 · K Closest Points", u: LC("k-closest-points-to-origin"), n: "heapq.nsmallest(k, points, key=lambda p: p[0]**2 + p[1]**2). No sqrt needed." } },
+      { t: "Spark SQL, windows, Parquet I/O", n: "Window functions in Spark: from pyspark.sql.window import Window; F.row_number().over(Window.partitionBy(...).orderBy(...)). Write partitioned Parquet: df.write.partitionBy('date').parquet(path) — this layout is how lakes stay queryable.",
+        s: { q: "185 · Department Top Three Salaries (hard)", u: LC("department-top-three-salaries"), n: "DENSE_RANK() OVER (PARTITION BY dept ORDER BY salary DESC) <= 3. Dense, because ties share a rank." },
+        p: { q: "128 · Longest Consecutive Sequence", u: LC("longest-consecutive-sequence"), n: "Put all in a set; only start counting when x−1 is absent (sequence start). O(n)." } },
+      { t: "Kafka concepts: topics, partitions, consumer groups", n: "Kafka = distributed append-only log. Producers write to topics; topics split into partitions (ordering guaranteed only within one); consumers track offsets; a consumer group splits partitions among members for parallelism. Concept-level is enough for now.",
+        s: { q: "1978 · Employees Whose Manager Left", u: LC("employees-whose-manager-left-the-company"), n: "salary < 30000 AND manager_id IS NOT NULL AND manager_id NOT IN (SELECT employee_id …). Beware NOT IN with NULLs." },
+        p: { q: "703 · Kth Largest in a Stream", u: LC("kth-largest-element-in-a-stream"), n: "Keep a min-heap of size k; heap[0] is always the answer. Streaming state in miniature." } },
+      { t: "Batch vs streaming · delivery guarantees · windowing", n: "Streaming = process events as they arrive. Delivery: at-most-once (may lose), at-least-once (may duplicate → make consumers idempotent), exactly-once (hard, framework-assisted). Windows: tumbling, sliding, session. Late data → watermarks.",
+        s: { q: "1661 · Avg Process Time per Machine", u: LC("average-time-of-process-per-machine"), n: "Self join start/end rows on machine+process, AVG(end.ts − start.ts). Or SUM(IF(activity='end', ts, -ts)) trick." },
+        p: { q: "3 · Longest Substring No Repeats", u: LC("longest-substring-without-repeating-characters"), n: "Sliding window + set; shrink from left while duplicate. Window patterns mirror stream windows conceptually." } },
+      { t: "Spark Structured Streaming (concept tour)", n: "Streaming DataFrames: readStream from Kafka/files → same transforms → writeStream with a trigger + checkpoint. Micro-batches under the hood. Checkpointing = how it recovers exactly-once-ish state. Read the docs guide; a toy file-stream demo is enough.",
+        s: { q: "601 · Human Traffic of Stadium (hard)", u: LC("human-traffic-of-stadium"), n: "Gaps & islands: id − ROW_NUMBER() is constant within a consecutive run; group by that diff, keep runs of 3+." },
+        p: { q: "219 · Contains Duplicate II", u: LC("contains-duplicate-ii"), n: "Sliding window set of size k: add current, evict nums[i−k]." } },
+      { t: "Lakehouse table formats: Delta, Iceberg, Hudi", n: "Plain Parquet on S3 can't UPDATE/DELETE safely. Table formats add a transaction log on top: ACID merges, time travel, schema evolution, compaction. Delta (Databricks), Iceberg (increasingly the open standard), Hudi. Know WHY they exist and one MERGE example.",
+        s: { q: "262 · Trips and Users (hard)", u: LC("trips-and-users"), n: "Join out banned users on BOTH client and driver, then AVG(status != 'completed') per day between the dates." },
+        p: { q: "36 · Valid Sudoku", u: LC("valid-sudoku"), n: "Sets per row, column, and box (r//3, c//3). Pure dict/set bookkeeping." } },
+      { t: "Mini-project: Spark batch job on a real dataset", n: "Pick a chunky public dataset (NYC Taxi is the classic). PySpark job: read raw → clean/dedupe → aggregate → write partitioned Parquet. Note where a shuffle happens in the Spark UI. Push the notebook/script to GitHub. Portfolio item #2.",
+        s: { q: "1731 · Reports to Each Employee", u: LC("the-number-of-employees-which-report-to-each-employee"), n: "Self join employee to manager, GROUP BY manager: COUNT + ROUND(AVG(age)) — ROUND before display." },
+        p: { q: "54 · Spiral Matrix", u: LC("spiral-matrix"), n: "Four boundary pointers (top/bottom/left/right), shrink after each edge pass." } },
+    ],
+  },
+  {
+    name: "Cloud, Capstone & Interviews",
+    tag: "make it hireable",
+    days: [
+      { t: "Object storage: S3/GCS + partitioned layout", n: "Object storage = infinite cheap key-value files; the foundation of every lake. Layout convention: s3://bucket/table/date=2026-07-19/file.parquet — partition folders enable pruning (engines skip irrelevant files). Learn boto3 basics: upload, download, list.",
+        s: { q: "1741 · Total Time per Employee", u: LC("find-total-time-spent-by-each-employee"), n: "SUM(out_time − in_time) GROUP BY event_day, emp_id. Simple — good day to attempt it in under 5 minutes." },
+        p: { q: "380 · Insert Delete GetRandom O(1)", u: LC("insert-delete-getrandom-o1"), n: "List + dict of value→index; delete = swap with last element, pop. Classic design combo." } },
+      { t: "Warehouse internals: Snowflake / BigQuery / Redshift", n: "Common theme: separation of storage and compute, columnar micro-partitions, pruning via metadata. Snowflake: virtual warehouses you resize/suspend. BigQuery: serverless, pay per bytes scanned (so SELECT * costs real money). Know one deeply, others conceptually.",
+        s: { q: "1517 · Valid E-Mails (regex)", u: LC("find-users-with-valid-e-mails"), n: "REGEXP '^[A-Za-z][A-Za-z0-9._-]*@leetcode\\\\.com$' — anchors ^ $, escaped dot. Regex in SQL = data cleaning superpower." },
+        p: { q: "48 · Rotate Image", u: LC("rotate-image"), n: "Transpose then reverse each row = 90° clockwise, in place." } },
+      { t: "Serverless compute: Lambda / Cloud Functions", n: "Small event-driven functions: 'when a file lands in S3, trigger ingestion.' Cheap glue for light pipelines; limits (15-min timeout, memory) mean heavy lifting stays in Spark/warehouse. Write one function that reads a file event and logs the key.",
+        s: { q: "1789 · Primary Department", u: LC("primary-department-for-each-employee"), n: "primary_flag='Y' UNION employees with exactly one row (GROUP BY HAVING COUNT(*)=1). Or COUNT window + CASE." },
+        p: { q: "621 · Task Scheduler", u: LC("task-scheduler"), n: "Greedy on the max frequency: (max_f−1)*(n+1) + count_of_max, floored by len(tasks)." } },
+      { t: "IAM, secrets, networking basics", n: "IAM roles > access keys in code — always. Secrets go in a secrets manager or env vars, NEVER in Git (add .env to .gitignore today). Concept-level networking: VPC, security groups, private vs public subnets — enough to talk about it.",
+        s: { q: "1907 revisit or 1729 · Followers Count", u: LC("find-followers-count"), n: "Speed run: GROUP BY user_id, COUNT, ORDER BY. Target: under 3 minutes including reading." },
+        p: { q: "15 · 3Sum", u: LC("3sum"), n: "Sort, fix one element, two-pointer the rest; skip duplicates at every level." } },
+      { t: "IaC + CI/CD for data (concept level)", n: "Terraform = infrastructure declared in code, reviewed in PRs like everything else. CI for data repos: on every PR run linting (sqlfluff), dbt build on a test schema, unit tests. You don't need to master Terraform — you need to not look blank when it's mentioned.",
+        s: { q: "1484 · Group Sold Products by Date", u: LC("group-sold-products-by-the-date"), n: "GROUP_CONCAT(DISTINCT product ORDER BY product) / STRING_AGG — string aggregation per group." },
+        p: { q: "227 · Basic Calculator II", u: LC("basic-calculator-ii"), n: "Stack of terms: push on +/-, replace top on */÷. Sum stack at the end. Mini-parsers = solid Python craft." } },
+      { t: "CAPSTONE PART 2 · lift the pipeline to the cloud", n: "Move Phase 3's pipeline to one cloud (AWS free tier: S3 + Lambda/Glue + Redshift Serverless or keep dbt→BigQuery). Same logic, cloud services. Document the architecture with a simple diagram in the README. Portfolio item #3 — your flagship.",
+        s: { q: "1633 · % Users Attended Contest", u: LC("percentage-of-users-attended-a-contest"), n: "COUNT per contest ÷ scalar subquery (SELECT COUNT(*) FROM Users) — cross-table percentage pattern." },
+        p: { q: "443 · String Compression", u: LC("string-compression"), n: "Read pointer + write pointer, count runs, write digits char by char. In-place again." } },
+      { t: "Cost & performance tuning", n: "Read query plans: EXPLAIN shows scans, join order, shuffle points. Warehouse levers: partition/cluster keys, avoiding SELECT *, materializing hot queries, right-sizing compute, auto-suspend. 'I cut that query's cost 80%' is a resume bullet.",
+        s: { q: "1211 · Queries Quality & Percentage", u: LC("queries-quality-and-percentage"), n: "AVG(rating/position) and AVG(rating < 3)*100 — both are AVG-of-expression tricks. ROUND(...,2)." },
+        p: { q: "567 · Permutation in String", u: LC("permutation-in-string"), n: "Fixed-size sliding window comparing two Counters; update counts on slide instead of recounting." } },
+      { t: "DE system design: practice the interview question", n: "'Design a pipeline ingesting 10M events/day for analytics.' Framework: sources → ingestion (batch/stream?) → storage (lake layout) → processing (Spark/dbt) → serving (warehouse/marts) → orchestration, quality, monitoring. Say trade-offs OUT LOUD. Do 2–3 scenarios on paper.",
+        s: { q: "1179 · Reformat Department Table", u: LC("reformat-department-table"), n: "Pivot: SUM(CASE WHEN month='Jan' THEN revenue END) AS Jan_Revenue … GROUP BY id. Manual pivots come up." },
+        p: { q: "355 · Design Twitter", u: LC("design-twitter"), n: "dicts for follows + tweets with timestamps, heapq.merge / nlargest for the feed. Full design rehearsal." } },
+      { t: "Portfolio polish + resume rewrite", n: "Each repo: crisp README (problem → architecture diagram → how to run → what you'd improve). Rewrite resume bullets as engineering outcomes: 'Built incremental Airflow+dbt pipeline processing X rows daily with automated quality checks.' Then: apply, and keep the daily drills running through interviews.",
+        s: { q: "1667 · Fix Names (cooldown)", u: LC("fix-names-in-a-table"), n: "CONCAT(UPPER(LEFT(name,1)), LOWER(SUBSTRING(name,2))). Light day — you've earned it." },
+        p: { q: "344 · Reverse String (cooldown)", u: LC("reverse-string"), n: "Two pointers, swap inward. Say the O(1)-space reasoning out loud like it's an interview." } },
+    ],
+  },
+];
+
+
+const TRACKS = [
+  { key: "de",  label: "DE",  color: "var(--teal)",   name: "Data Engineering" },
+  { key: "sql", label: "SQL", color: "var(--amber)",  name: "SQL drill" },
+  { key: "py",  label: "PY",  color: "var(--violet)", name: "Python drill" },
+];
+const KEY = "de_transition_tracker_v1";
+const RESOURCES = [
+  { y: "https://www.youtube.com/results?search_query=OLTP+vs+OLAP+explained", wl: "AWS \u00b7 OLAP vs OLTP", w: "https://aws.amazon.com/compare/the-difference-between-olap-and-oltp/" },
+  { y: "https://www.youtube.com/results?search_query=data+warehouse+vs+data+lake+vs+lakehouse+explained", wl: "Databricks \u00b7 What is a lakehouse", w: "https://www.databricks.com/glossary/data-lakehouse" },
+  { y: "https://www.youtube.com/results?search_query=star+schema+data+warehouse+explained", wl: "Kimball \u00b7 Dimensional modeling techniques", w: "https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/kimball-techniques/dimensional-modeling-techniques/" },
+  { y: "https://www.youtube.com/results?search_query=fact+table+types+grain+data+warehouse", wl: "Wikipedia \u00b7 Fact table", w: "https://en.wikipedia.org/wiki/Fact_table" },
+  { y: "https://www.youtube.com/results?search_query=slowly+changing+dimensions+type+2+explained", wl: "Wikipedia \u00b7 Slowly changing dimension", w: "https://en.wikipedia.org/wiki/Slowly_changing_dimension" },
+  { y: "https://www.youtube.com/results?search_query=database+normalization+explained", wl: "Wikipedia \u00b7 Database normalization", w: "https://en.wikipedia.org/wiki/Database_normalization" },
+  { y: "https://www.youtube.com/results?search_query=bigquery+sandbox+tutorial+for+beginners", wl: "Google \u00b7 BigQuery sandbox (free, no card)", w: "https://cloud.google.com/bigquery/docs/sandbox" },
+  { y: "https://www.youtube.com/results?search_query=parquet+vs+csv+vs+avro+file+formats+explained", wl: "Apache Parquet docs", w: "https://parquet.apache.org/docs/" },
+  { y: "https://www.youtube.com/results?search_query=git+and+github+tutorial+for+beginners", wl: "Learn Git Branching (interactive)", w: "https://learngitbranching.js.org" },
+  { y: "https://www.youtube.com/results?search_query=dbt+tutorial+for+beginners", wl: "dbt Learn \u00b7 free Fundamentals course", w: "https://learn.getdbt.com" },
+  { y: "https://www.youtube.com/results?search_query=how+to+structure+dbt+project+staging+marts", wl: "dbt \u00b7 Best practices guides", w: "https://docs.getdbt.com/best-practices" },
+  { y: "https://www.youtube.com/results?search_query=dbt+tests+tutorial", wl: "dbt \u00b7 Data tests", w: "https://docs.getdbt.com/docs/build/data-tests" },
+  { y: "https://www.youtube.com/results?search_query=dbt+incremental+models+explained", wl: "dbt \u00b7 Incremental models", w: "https://docs.getdbt.com/docs/build/incremental-models" },
+  { y: "https://www.youtube.com/results?search_query=dbt+jinja+macros+tutorial", wl: "dbt \u00b7 Jinja and macros", w: "https://docs.getdbt.com/docs/build/jinja-macros" },
+  { y: "https://www.youtube.com/results?search_query=sql+cte+common+table+expressions+tutorial", wl: "Mode \u00b7 SQL tutorial", w: "https://mode.com/sql-tutorial" },
+  { y: "https://www.youtube.com/results?search_query=dbt+full+project+tutorial+jaffle+shop", wl: "dbt \u00b7 jaffle_shop example project", w: "https://github.com/dbt-labs/jaffle_shop" },
+  { y: "https://www.youtube.com/results?search_query=docker+explained+in+100+seconds+fireship", wl: "Docker \u00b7 Get started guide", w: "https://docs.docker.com/get-started/" },
+  { y: "https://www.youtube.com/results?search_query=docker+compose+postgres+tutorial", wl: "Docker Hub \u00b7 official postgres image", w: "https://hub.docker.com/_/postgres" },
+  { y: "https://www.youtube.com/results?search_query=apache+airflow+explained+for+beginners", wl: "Airflow \u00b7 official docs", w: "https://airflow.apache.org/docs/" },
+  { y: "https://www.youtube.com/results?search_query=airflow+docker+compose+tutorial", wl: "Airflow \u00b7 run with docker-compose", w: "https://airflow.apache.org/docs/apache-airflow/stable/howto/docker-compose/index.html" },
+  { y: "https://www.youtube.com/results?search_query=ETL+vs+ELT+explained", wl: "Requests library docs (API extraction)", w: "https://requests.readthedocs.io" },
+  { y: "https://www.youtube.com/results?search_query=incremental+data+load+vs+full+load+explained", wl: "Wikipedia \u00b7 MERGE (upsert) in SQL", w: "https://en.wikipedia.org/wiki/Merge_(SQL)" },
+  { y: "https://www.youtube.com/results?search_query=idempotent+data+pipelines+explained", wl: "StartDataEngineering \u00b7 Idempotent pipelines", w: "https://www.startdataengineering.com/post/why-how-idempotent-data-pipeline/" },
+  { y: "https://www.youtube.com/results?search_query=data+quality+checks+pipelines+great+expectations", wl: "Great Expectations docs", w: "https://docs.greatexpectations.io" },
+  { y: "https://www.youtube.com/results?search_query=data+pipeline+monitoring+and+alerting", wl: "Python \u00b7 Logging HOWTO", w: "https://docs.python.org/3/howto/logging.html" },
+  { y: "https://www.youtube.com/results?search_query=end+to+end+data+engineering+project+airflow+dbt", wl: "DataTalksClub \u00b7 DE Zoomcamp (free)", w: "https://github.com/DataTalksClub/data-engineering-zoomcamp" },
+  { y: "https://www.youtube.com/results?search_query=apache+spark+architecture+explained+driver+executor", wl: "Spark \u00b7 official docs overview", w: "https://spark.apache.org/docs/latest/index.html" },
+  { y: "https://www.youtube.com/results?search_query=pyspark+tutorial+for+beginners+dataframe", wl: "PySpark \u00b7 API docs & quickstart", w: "https://spark.apache.org/docs/latest/api/python/index.html" },
+  { y: "https://www.youtube.com/results?search_query=spark+shuffle+narrow+wide+transformations+explained", wl: "Spark \u00b7 RDD guide (shuffle section)", w: "https://spark.apache.org/docs/latest/rdd-programming-guide.html#shuffle-operations" },
+  { y: "https://www.youtube.com/results?search_query=spark+broadcast+join+and+partitioning+explained", wl: "Spark \u00b7 SQL performance tuning", w: "https://spark.apache.org/docs/latest/sql-performance-tuning.html" },
+  { y: "https://www.youtube.com/results?search_query=pyspark+window+functions+tutorial", wl: "Spark \u00b7 SQL programming guide", w: "https://spark.apache.org/docs/latest/sql-programming-guide.html" },
+  { y: "https://www.youtube.com/results?search_query=apache+kafka+explained+for+beginners", wl: "Kafka \u00b7 official intro", w: "https://kafka.apache.org/intro" },
+  { y: "https://www.youtube.com/results?search_query=batch+vs+stream+processing+exactly+once+explained", wl: "Kafka \u00b7 documentation", w: "https://kafka.apache.org/documentation/" },
+  { y: "https://www.youtube.com/results?search_query=spark+structured+streaming+tutorial", wl: "Spark \u00b7 Structured Streaming guide", w: "https://spark.apache.org/docs/latest/structured-streaming-programming-guide.html" },
+  { y: "https://www.youtube.com/results?search_query=delta+lake+vs+iceberg+vs+hudi+explained", wl: "Apache Iceberg \u00b7 official site", w: "https://iceberg.apache.org" },
+  { y: "https://www.youtube.com/results?search_query=nyc+taxi+dataset+pyspark+project", wl: "NYC TLC \u00b7 trip record data", w: "https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page" },
+  { y: "https://www.youtube.com/results?search_query=amazon+s3+explained+for+beginners", wl: "AWS \u00b7 S3 user guide", w: "https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html" },
+  { y: "https://www.youtube.com/results?search_query=snowflake+architecture+explained", wl: "Snowflake \u00b7 documentation", w: "https://docs.snowflake.com" },
+  { y: "https://www.youtube.com/results?search_query=aws+lambda+explained+for+beginners", wl: "AWS \u00b7 Lambda developer guide", w: "https://docs.aws.amazon.com/lambda/latest/dg/welcome.html" },
+  { y: "https://www.youtube.com/results?search_query=aws+iam+roles+and+policies+explained", wl: "AWS \u00b7 IAM introduction", w: "https://docs.aws.amazon.com/IAM/latest/UserGuide/introduction.html" },
+  { y: "https://www.youtube.com/results?search_query=terraform+explained+in+100+seconds", wl: "HashiCorp \u00b7 What is Terraform", w: "https://developer.hashicorp.com/terraform/intro" },
+  { y: "https://www.youtube.com/results?search_query=aws+data+engineering+project+end+to+end", wl: "AWS \u00b7 Free tier", w: "https://aws.amazon.com/free/" },
+  { y: "https://www.youtube.com/results?search_query=sql+explain+query+plan+tutorial", wl: "PostgreSQL \u00b7 Using EXPLAIN", w: "https://www.postgresql.org/docs/current/using-explain.html" },
+  { y: "https://www.youtube.com/results?search_query=data+engineering+system+design+interview", wl: "System Design Primer (GitHub)", w: "https://github.com/donnemartin/system-design-primer" },
+  { y: "https://www.youtube.com/results?search_query=data+engineering+portfolio+projects+resume", wl: "Make a README", w: "https://www.makeareadme.com" }
+];
+const OPT = [
+  { s: "LEFT JOIN is already the optimal shape here \u2014 just make sure you're not writing a per-row subquery.", p: "O(n) time \u00b7 O(n) space \u2014 one-pass dict of seen values; the double loop is O(n\u00b2)." },
+  { s: "DENSE_RANK in one scan beats MAX-with-subquery, which scans the table twice.", p: "O(n)/O(n) \u2014 add to a set while iterating, early-exit on first repeat; sorting is O(n log n)." },
+  { s: "Self join on id is fine \u2014 the optimization is joining on the key, not filtering after a CROSS JOIN.", p: "O(n)/O(1) \u2014 fixed 26-slot count array (or Counter); sorting both strings is O(n log n)." },
+  { s: "MAX(salary) OVER (PARTITION BY dept) = one scan; join-to-aggregated-subquery reads the table twice.", p: "O(n)/O(1) \u2014 build Counter of magazine once; calling magazine.count(c) per char is O(n\u00b2)." },
+  { s: "DENSE_RANK = one window scan; the correlated COUNT(DISTINCT) subquery version is O(n\u00b2).", p: "O(n)/O(1) \u2014 two maps, one pass; using .index() inside the loop makes it O(n\u00b2)." },
+  { s: "GROUP BY email keeping MIN(id), delete the rest \u2014 one aggregate scan vs pairwise self-join.", p: "O(n)/O(n) \u2014 single zip(pattern, words) pass; compare first-occurrence indices of each side." },
+  { s: "LAG(temperature) OVER (ORDER BY date) = one scan; the self-join can degrade to O(n\u00b2).", p: "O(n)/O(1) \u2014 Counter then one ordered pass; s.index(c) in a loop is the O(n\u00b2) trap." },
+  { s: "Two LAGs in one window scan beat the triple self-join.", p: "Sorted-tuple key is O(n\u00b7k log k); optimal key is a 26-count tuple \u2192 O(n\u00b7k)." },
+  { s: "GROUP BY + HAVING then one join back; a correlated subquery per manager rescans repeatedly.", p: "O(n\u00b7m) either way \u2014 but min(strs)/max(strs) comparison trick checks only two strings." },
+  { s: "Single LEFT JOIN \u2014 already optimal. The real lesson is the NULL predicate.", p: "O(n)/O(1) \u2014 slow/fast write-read pointers in place; building a new list uses O(n) extra." },
+  { s: "No join needed at all \u2014 one scan with OR IS NULL. Deleting the join IS the optimization.", p: "O(m+n)/O(1) \u2014 merge backwards from the end; sort() after copy is O((m+n) log(m+n))." },
+  { s: "GROUP BY + ORDER BY + LIMIT is one aggregate; use RANK only if ties are demanded.", p: "O(n)/O(1) \u2014 Boyer-Moore voting (candidate + counter) beats Counter's O(n) space." },
+  { s: "UNION ALL both directions then ONE GROUP BY \u2014 not two counted subqueries joined.", p: "O(n)/O(1) \u2014 negate nums[abs(x)-1] to mark seen, then scan for positives; a set costs O(n) space." },
+  { s: "EXISTS / LEFT JOIN DISTINCT parent ids once; IN (subquery) may re-evaluate per row on some engines.", p: "O(n)/O(1) \u2014 track running min, one pass; checking all pairs is O(n\u00b2)." },
+  { s: "CASE on id parity is a single scan \u2014 no self-join required at all.", p: "O(n)/O(1) extra \u2014 write prefix products into the output array, multiply a running suffix backwards." },
+  { s: "Two COUNT(*) OVER windows in one scan vs two GROUP BY subqueries joined back.", p: "Sort O(n log n) dominates and is optimal \u2014 the merge sweep itself is O(n)." },
+  { s: "COUNT(DISTINCT key) + HAVING = one scan; per-customer NOT EXISTS is quadratic-ish.", p: "O(n)/O(n) stack is optimal; repeatedly doing str.replace('()','') is O(n\u00b2)." },
+  { s: "ROW_NUMBER window = one scan; join-to-MIN(year) subquery reads twice.", p: "getMin must be O(1): store (value, min_so_far) pairs; min(stack) per call is O(n)." },
+  { s: "Single filtered aggregate \u2014 already optimal. Make sure the date filter can use an index (no functions on the column).", p: "O(n)/O(n) \u2014 one split, one stack pass. Nothing faster exists." },
+  { s: "Put the 2019 filter in the ON clause: one LEFT JOIN scan, and correctness for zero-order users.", p: "O(n) one stack pass; repeated string concat inside loops without join() degrades badly." },
+  { s: "ROW_NUMBER over changes \u2264 target date; a correlated MAX(change_date) per product rescans the table.", p: "Amortized O(1) per op \u2014 that's the point of buckets; know that rehashing keeps it amortized." },
+  { s: "MIN(order_date) as a window + AVG(boolean) in one pass; joining to a first-order subquery is two scans.", p: "All ops O(1) \u2014 head index + count with % capacity; list.pop(0) is the O(n) trap." },
+  { s: "Conditional SUM/COUNT in one scan is already optimal \u2014 resist the UNION of filtered copies.", p: "O(n)/O(n) monotonic stack; the brute look-ahead per day is O(n\u00b2)." },
+  { s: "SUM(weight) OVER (ORDER BY turn) = one scan; a correlated running-sum subquery is O(n\u00b2).", p: "O(n)/O(n) prefix-sum + dict; enumerating all subarrays is O(n\u00b2)." },
+  { s: "Collapse to daily totals FIRST, then the 7-row window \u2014 windowing raw rows is more work and double counts.", p: "O(n)/O(1) Kadane one pass; know it beats the O(n log n) divide & conquer." },
+  { s: "Two small top-1 aggregates UNIONed is fine \u2014 just ensure (user_id, movie_id) style indexes exist.", p: "O(1) get/put \u2014 OrderedDict move_to_end/popitem; scanning a list for recency is O(n)." },
+  { s: "MIN(event_date) window + one join to day+1; correlated EXISTS per player rescans logins.", p: "Bucket sort by frequency = O(n), beating heap O(n log k) and full sort O(n log n)." },
+  { s: "Signed SUM(CASE Sell/Buy) in one scan \u2014 optimal as-is.", p: "Heap of (\u2212count, word) \u2192 O(n log k); full sort is O(n log n) \u2014 fine, but say the difference aloud." },
+  { s: "Three SUM(CASE) buckets in ONE scan beats three UNIONed filtered scans.", p: "Quickselect averages O(n); size-k heap O(n log k); full sort O(n log n). Know all three." },
+  { s: "AVG(action='confirmed') on a single LEFT JOIN \u2014 avoid two aggregate subqueries joined.", p: "Quickselect on squared distance = O(n) average; never take sqrt \u2014 ordering is identical." },
+  { s: "DENSE_RANK \u2264 3 in one window scan; the classic correlated COUNT(DISTINCT salary) answer is O(n\u00b2).", p: "O(n)/O(n) \u2014 set, expand only from sequence starts (x\u22121 absent); sorting is the O(n log n) naive." },
+  { s: "LEFT JOIN self + IS NULL: one scan, NULL-safe; NOT IN both risks NULLs and can plan worse.", p: "Size-k min-heap \u2192 O(log k) per add; re-sorting on every add is O(n log n)." },
+  { s: "Signed SUM(IF end, ts, \u2212ts) grouped = one scan; the start/end self-join doubles the read.", p: "O(n)/O(min(n,\u03a3)) \u2014 keep a last-seen index map and JUMP the left pointer, don't creep it." },
+  { s: "id \u2212 ROW_NUMBER() islands trick = one scan; the 3-way self-join is the brute force.", p: "O(n)/O(k) rolling window set: add current, evict i\u2212k; comparing each pair in range is O(n\u00b7k)." },
+  { s: "Filter banned users inside the joins, aggregate once per day \u2014 no per-day subqueries.", p: "Fixed O(81) \u2014 one pass with row/col/box sets; key insight is box id = (r//3, c//3)." },
+  { s: "One self-join + GROUP BY is the floor here; just ROUND at the end, not per row.", p: "O(m\u00b7n)/O(1) \u2014 four shrinking boundaries; a visited matrix spends O(m\u00b7n) space for nothing." },
+  { s: "SUM(out \u2212 in) grouped \u2014 already optimal. Try to write it in under 3 minutes.", p: "All O(1) \u2014 swap-with-last then pop for delete; list.remove() is O(n) and fails the spirit." },
+  { s: "Anchored regex (^...$) in one scan; unanchored patterns can backtrack expensively.", p: "O(n\u00b2)/O(1) \u2014 transpose then reverse rows in place; allocating a rotated copy is the O(n\u00b2)-space naive." },
+  { s: "COUNT(*) OVER (PARTITION BY employee) + CASE = one scan vs UNIONing two filtered queries.", p: "Greedy formula (maxf\u22121)(n+1)+ties = O(n); simulating with a heap is O(n log 26) and slower to code." },
+  { s: "Speed-run day: plain GROUP BY + COUNT. If it's slow, the fix is an index, not a rewrite.", p: "Sort + two pointers = O(n\u00b2)/O(1) and duplicate-safe; hash variant same time but O(n) space; brute is O(n\u00b3)." },
+  { s: "GROUP_CONCAT/STRING_AGG in one grouped scan \u2014 optimal.", p: "O(n)/O(n) stack of terms; the O(1)-space version keeps only last term + running total." },
+  { s: "Compute the scalar total-users subquery ONCE \u2014 check the plan doesn't re-run it per row.", p: "O(n)/O(1) \u2014 read/write pointers compressing in place; building a new string then copying back is the naive." },
+  { s: "Both metrics are AVG-of-expression in one scan \u2014 already optimal.", p: "O(n)/O(1) \u2014 maintain a 26-slot diff counter and a matches count; recounting the window per slide is O(26\u00b7n)." },
+  { s: "SUM(CASE month) pivot = one scan. Manual pivot IS the efficient form here.", p: "heapq.merge over each followee's recent tweets \u2192 O(k log f) for the feed; sorting every tweet ever is the naive." },
+  { s: "Cooldown: CONCAT + UPPER/LOWER one scan. Enjoy it.", p: "O(n)/O(1) two-pointer swap. Then explain the space argument out loud like an interviewer asked." }
+];
+
+
+let n = 0;
+const FLAT = PHASES.map((ph, pi) => ({ ...ph, index: pi, days: ph.days.map(d => ({ ...d, id: "d" + (++n), num: n })) }));
+const TOTAL = n;
+
+let checks = {};
+try { const raw = localStorage.getItem(KEY); if (raw) checks = JSON.parse(raw).checks || {}; } catch (e) {}
+let openPhases = { 0: true };
+let openDay = null;
+
+function save() {
+  try {
+    localStorage.setItem(KEY, JSON.stringify({ checks }));
+    const el = document.getElementById("saveMsg");
+    el.textContent = "progress saved ✓"; el.className = "save saved";
+    setTimeout(() => { el.textContent = "progress auto-saves in this browser"; el.className = "save"; }, 1200);
+  } catch (e) {}
+  if (typeof scheduleSync === "function") scheduleSync();
+}
+const doneCount = id => TRACKS.filter(t => checks[id] && checks[id][t.key]).length;
+function phaseProg(ph) {
+  let done = 0; ph.days.forEach(d => done += doneCount(d.id));
+  const total = ph.days.length * 3;
+  return { done, total, pct: Math.round(done / total * 100) };
+}
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function render() {
+  let overallDone = 0;
+  FLAT.forEach(ph => overallDone += phaseProg(ph).done);
+  document.getElementById("pctBig").innerHTML = Math.round(overallDone / (TOTAL*3) * 100) + '<span class="pct-sign">%</span>';
+  document.getElementById("pctSub").textContent = overallDone + " / " + (TOTAL*3) + " tasks";
+
+  // pipeline
+  document.getElementById("pipeline").innerHTML = FLAT.map((ph, i) => {
+    const p = phaseProg(ph);
+    const st = p.pct === 100 ? "done" : p.done > 0 ? "running" : "";
+    const node = '<button class="pipe-node ' + st + '" data-phase="' + i + '" title="' + esc(ph.name) + ' — ' + p.pct + '%">' + (p.pct === 100 ? "✓" : i + 1) + "</button>";
+    const edge = i < FLAT.length - 1 ? '<div class="pipe-edge"><div class="pipe-edge-fill" style="width:' + p.pct + '%"></div></div>' : "";
+    return '<div class="pipe-seg">' + node + edge + "</div>";
+  }).join("");
+
+  // tracks
+  document.getElementById("tracks").innerHTML = TRACKS.map(t => {
+    let d = 0; FLAT.forEach(ph => ph.days.forEach(day => { if (checks[day.id] && checks[day.id][t.key]) d++; }));
+    const pct = Math.round(d / TOTAL * 100);
+    let optTxt = "";
+    {
+      let od = 0; FLAT.forEach(ph => ph.days.forEach(day => { if (checks[day.id] && checks[day.id][t.key + "_opt"]) od++; }));
+      optTxt = ' <span class="opt-pct">' + (t.key === "de" ? "✓quiz " : "⚡") + Math.round(od / TOTAL * 100) + "%</span>";
+    }
+    return '<div class="track"><span class="track-dot" style="background:' + t.color + '"></span><span class="track-name">' + t.name + optTxt + '</span><div class="track-bar"><div class="track-fill" style="width:' + pct + '%;background:' + t.color + '"></div></div><span class="track-pct">' + pct + "%</span></div>";
+  }).join("");
+
+  // resume button
+  let next = null;
+  for (const ph of FLAT) { for (const d of ph.days) { if (doneCount(d.id) < 3) { next = d; break; } } if (next) break; }
+  const rb = document.getElementById("resumeBtn");
+  if (next) { rb.style.display = ""; rb.textContent = "▶ resume day " + String(next.num).padStart(2, "0"); rb.dataset.day = next.id; }
+  else { rb.style.display = "none"; }
+
+  // phases
+  document.getElementById("phases").innerHTML = FLAT.map((ph, pi) => {
+    const p = phaseProg(ph);
+    const open = !!openPhases[pi];
+    const daysHtml = !open ? "" : '<div class="days">' + ph.days.map(d => {
+      const dc = doneCount(d.id);
+      const lights = TRACKS.map(t => { const on = checks[d.id] && checks[d.id][t.key]; const op = checks[d.id] && checks[d.id][t.key + "_opt"]; return '<span class="light' + (op ? ' opt-glow' : '') + '" style="border-color:' + t.color + ';background:' + (on ? t.color : 'transparent') + (op ? ';--glow:' + t.color : '') + '"></span>'; }).join("");
+      const body = openDay !== d.id ? "" :
+        '<div class="day-body">' +
+        block("var(--teal)", "DE TOPIC", d.id, "de", null, null, d.n, d.num) +
+        block("var(--amber)", "SQL DRILL", d.id, "sql", d.s.q, d.s.u, d.s.n, d.num) +
+        block("var(--violet)", "PYTHON DRILL", d.id, "py", d.p.q, d.p.u, d.p.n, d.num) +
+        '<button class="note-btn" data-note-day="' + d.num + '">✎ add a note for day ' + String(d.num).padStart(2, "0") + "</button>" +
+        "</div>";
+      return '<div class="day ' + (dc === 3 ? "complete" : "") + '"><button class="day-row" data-day="' + d.id + '"><span class="day-num">' + String(d.num).padStart(2, "0") + '</span><span class="day-title">' + esc(d.t) + '</span><span class="day-lights">' + lights + "</span></button>" + body + "</div>";
+    }).join("") + "</div>";
+    return '<section class="phase"><button class="phase-hdr" data-toggle-phase="' + pi + '"><div class="phase-left"><span class="chev ' + (open ? "open" : "") + '">›</span><div><div class="phase-name"><span class="phase-idx">STAGE ' + (pi + 1) + "</span>" + esc(ph.name) + '</div><div class="phase-tag">' + esc(ph.tag) + " · days " + ph.days[0].num + "–" + ph.days[ph.days.length - 1].num + '</div></div></div><div class="phase-right"><div class="phase-bar"><div class="phase-fill" style="width:' + p.pct + '%"></div></div><span class="phase-pct">' + p.pct + "%</span></div></button>" + daysHtml + "</section>";
+  }).join("");
+}
+
+function block(color, tag, dayId, track, q, u, note, dayNum) {
+  const checked = checks[dayId] && checks[dayId][track] ? "checked" : "";
+  let link = q ? '<a class="qlink" href="' + u + '" target="_blank" rel="noreferrer">' + esc(q) + " ↗</a>" : "";
+  if (track === "de") {
+    const r = RESOURCES[dayNum - 1];
+    link = '<div class="res-links"><a class="qlink" href="' + r.y + '" target="_blank" rel="noreferrer">▶ best videos on YouTube</a><a class="qlink" href="' + r.w + '" target="_blank" rel="noreferrer">' + esc(r.wl) + " ↗</a></div>";
+  }
+  let optHtml = "";
+  if (track === "sql" || track === "py") {
+    const k = track === "sql" ? "s" : "p";
+    const h1 = NUDGE[dayNum - 1][k];
+    const h2 = note;
+    const optHint = track === "sql" ? OPT[dayNum - 1].s : OPT[dayNum - 1].p;
+    const optOn = checks[dayId] && checks[dayId][track + "_opt"] ? "checked" : "";
+    optHtml =
+      '<details class="hintbox"><summary>hint 1 · a nudge</summary><p class="note opt-note">' + esc(h1) + "</p></details>" +
+      '<details class="hintbox"><summary>hint 2 · the approach</summary><p class="note opt-note">' + esc(h2) + "</p></details>" +
+      '<details class="opt"><summary>⚡ optimal version · hint hidden</summary><p class="note opt-note">' + esc(optHint) + '</p><label class="check opt-check"><input type="checkbox" ' + optOn + ' data-check="' + dayId + ":" + track + '_opt"><span>solved optimally</span></label></details>';
+  }
+  const stuck = q ? "" : '<p class="note">' + esc(note) + "</p>";
+  return '<div class="block" style="border-color:' + color + '"><div class="block-hdr"><span class="block-tag" style="color:' + color + '">' + tag + '</span><label class="check"><input type="checkbox" ' + checked + ' data-check="' + dayId + ":" + track + '"><span>done</span></label></div>' + link + stuck + optHtml + "</div>";
+}
+
+document.addEventListener("click", e => {
+  const ph = e.target.closest("[data-toggle-phase]");
+  if (ph) { const i = +ph.dataset.togglePhase; openPhases[i] = !openPhases[i]; render(); return; }
+  const node = e.target.closest("[data-phase]");
+  if (node) { const i = +node.dataset.phase; openPhases[i] = !openPhases[i]; render(); return; }
+  const row = e.target.closest("[data-day]");
+  if (row) { const id = row.dataset.day; openDay = openDay === id ? null : id; render(); return; }
+  const rb = e.target.closest("#resumeBtn");
+  if (rb && rb.dataset.day) {
+    const id = rb.dataset.day;
+    const pi = FLAT.findIndex(p => p.days.some(d => d.id === id));
+    openPhases[pi] = true; openDay = id; render();
+    return;
+  }
+  const rs = e.target.closest("#resetBtn");
+  if (rs) { if (confirm("Clear all progress? This can't be undone.")) { checks = {}; save(); render(); } return; }
+  const tab = e.target.closest(".tab");
+  if (tab) {
+    document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t === tab));
+    ["tracker", "db", "sql", "py", "notes"].forEach(k => document.getElementById("tab-" + k).classList.toggle("hidden", k !== tab.dataset.tab));
+    if (tab.dataset.tab === "notes") renderNotes();
+    return;
+  }
+});
+document.addEventListener("change", e => {
+  const cb = e.target.closest("[data-check]");
+  if (!cb) return;
+  const [dayId, track] = cb.dataset.check.split(":");
+  if (track === "de" && cb.checked) { cb.checked = false; openQuiz(dayId); return; }
+  checks[dayId] = checks[dayId] || {};
+  checks[dayId][track] = cb.checked;
+  if (track.endsWith("_opt") && cb.checked) checks[dayId][track.replace("_opt", "")] = true;
+  if (!track.endsWith("_opt") && !cb.checked) checks[dayId][track + "_opt"] = false;
+  save(); render();
+});
+
+// ───── personal notes ─────
+const NOTES_KEY = "de_tracker_notes_v1";
+let notes = [];
+try { const raw = localStorage.getItem(NOTES_KEY); if (raw) notes = JSON.parse(raw) || []; } catch (e) {}
+let editingId = null;
+
+function saveNotes() { try { localStorage.setItem(NOTES_KEY, JSON.stringify(notes)); } catch (e) {} if (typeof scheduleSync === "function") scheduleSync(); }
+
+function renderNotes() {
+  const list = document.getElementById("notesList");
+  if (!notes.length) { list.innerHTML = '<p style="color:var(--muted);font-size:13px;">No notes yet. First stuck moment goes here.</p>'; return; }
+  list.innerHTML = notes.slice().reverse().map(nt => {
+    const when = new Date(nt.ts).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+    return '<div class="note-card"><div class="note-card-hdr">' +
+      (nt.tag ? '<span class="note-card-tag">' + esc(nt.tag) + "</span>" : "") +
+      '<span class="note-card-date">' + when + '</span>' +
+      '<span class="note-card-actions"><button class="note-mini" data-edit-note="' + nt.id + '">edit</button><button class="note-mini danger" data-del-note="' + nt.id + '">delete</button></span>' +
+      '</div><p class="note-card-text">' + esc(nt.text).replace(/\n/g, "<br>") + "</p></div>";
+  }).join("");
+}
+
+function switchTab(name) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
+  ["tracker", "db", "sql", "py", "notes"].forEach(k => document.getElementById("tab-" + k).classList.toggle("hidden", k !== name));
+  if (name === "notes") renderNotes();
+}
+
+document.addEventListener("click", e => {
+  const gt = e.target.closest("[data-goto-tab]");
+  if (gt) { switchTab(gt.dataset.gotoTab); window.scrollTo({ top: 0 }); return; }
+  const cp = e.target.closest("[data-copy-prompt]");
+  if (cp) {
+    const prompt = "I am practicing this problem: " + cp.dataset.q + " (" + cp.dataset.u + ").\n" +
+      "I am stuck, but DO NOT give me the solution or write the final code.\n" +
+      "Coach me instead: (1) first ask me to describe my current approach and where exactly I am stuck, " +
+      "(2) then give me ONE small hint at a time and wait for my reply, " +
+      "(3) only confirm my solution after I write it myself, then review its time and space complexity with me.\n" +
+      "My current approach so far: ";
+    const done = () => { cp.textContent = "copied ✓ — paste into a Claude chat"; setTimeout(() => { cp.textContent = "copy a hint-me prompt"; }, 2500); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(prompt).then(done).catch(() => { window.prompt("Copy this prompt:", prompt); });
+    } else { window.prompt("Copy this prompt:", prompt); }
+    return;
+  }
+  const nb = e.target.closest("[data-note-day]");
+  if (nb) {
+    switchTab("notes");
+    document.getElementById("noteTag").value = "Day " + String(nb.dataset.noteDay).padStart(2, "0");
+    document.getElementById("noteText").focus();
+    window.scrollTo({ top: 0 });
+    return;
+  }
+  if (e.target.closest("#noteSave")) {
+    const tag = document.getElementById("noteTag").value.trim();
+    const text = document.getElementById("noteText").value.trim();
+    if (!text) return;
+    if (editingId) {
+      const nt = notes.find(n => n.id === editingId);
+      if (nt) { nt.tag = tag; nt.text = text; }
+      editingId = null;
+      document.getElementById("noteCancel").classList.add("hidden");
+    } else {
+      notes.push({ id: "n" + Date.now(), tag, text, ts: Date.now() });
+    }
+    document.getElementById("noteTag").value = "";
+    document.getElementById("noteText").value = "";
+    saveNotes(); renderNotes();
+    return;
+  }
+  if (e.target.closest("#noteCancel")) {
+    editingId = null;
+    document.getElementById("noteTag").value = "";
+    document.getElementById("noteText").value = "";
+    document.getElementById("noteCancel").classList.add("hidden");
+    return;
+  }
+  const ed = e.target.closest("[data-edit-note]");
+  if (ed) {
+    const nt = notes.find(n => n.id === ed.dataset.editNote);
+    if (nt) {
+      editingId = nt.id;
+      document.getElementById("noteTag").value = nt.tag || "";
+      document.getElementById("noteText").value = nt.text;
+      document.getElementById("noteCancel").classList.remove("hidden");
+      document.getElementById("noteText").focus();
+      window.scrollTo({ top: 0 });
+    }
+    return;
+  }
+  const del = e.target.closest("[data-del-note]");
+  if (del) {
+    if (confirm("Delete this note?")) {
+      notes = notes.filter(n => n.id !== del.dataset.delNote);
+      saveNotes(); renderNotes();
+    }
+    return;
+  }
+});
+
+// ───── understanding check (quiz on DE done) ─────
+let qz = null; // {dayId, dayNum, idx, missed:[]}
+function openQuiz(dayId) {
+  const dayNum = parseInt(dayId.slice(1), 10);
+  qz = { dayId, dayNum, idx: 0, missed: [] };
+  document.getElementById("quizTitle").textContent = "QUICK CHECK · DAY " + String(dayNum).padStart(2, "0");
+  document.getElementById("quizOverlay").classList.remove("hidden");
+  showQuizQ();
+}
+function showQuizQ() {
+  const [q] = QUIZ[qz.dayNum - 1][qz.idx];
+  document.getElementById("quizProg").textContent = (qz.idx + 1) + " / 3";
+  document.getElementById("quizQ").textContent = q;
+  const a = document.getElementById("quizA");
+  a.classList.add("hidden"); a.textContent = "";
+  document.getElementById("quizActions").innerHTML = '<button class="quiz-btn reveal" id="qReveal">answer in my head → reveal</button>';
+}
+function markDone(dayId, verified) {
+  checks[dayId] = checks[dayId] || {};
+  checks[dayId].de = true;
+  if (verified) checks[dayId].de_opt = true;
+  save(); render();
+}
+function closeQuiz() { document.getElementById("quizOverlay").classList.add("hidden"); qz = null; }
+function finishQuiz() {
+  const missed = qz.missed;
+  if (!missed.length) {
+    markDone(qz.dayId, true);
+    document.getElementById("quizQ").textContent = "3/3 — understanding verified. Topic marked done with a glow.";
+    document.getElementById("quizA").classList.add("hidden");
+    document.getElementById("quizActions").innerHTML = '<button class="quiz-btn good" id="qClose">continue</button>';
+  } else {
+    notes.push({ id: "n" + Date.now(), tag: "Day " + String(qz.dayNum).padStart(2, "0") + " quiz", text: "Missed on understanding check — revisit before reattempt:\n• " + missed.join("\n• "), ts: Date.now() });
+    saveNotes();
+    document.getElementById("quizQ").textContent = "Missed " + missed.length + " of 3. The missed questions were saved to MY NOTES automatically.";
+    document.getElementById("quizA").classList.add("hidden");
+    document.getElementById("quizActions").innerHTML = '<button class="quiz-btn" id="qReread">not done yet — I\'ll re-read</button><button class="quiz-btn warn" id="qAnyway">mark done anyway</button>';
+  }
+}
+document.addEventListener("click", e => {
+  if (e.target.closest("#qReveal") && qz) {
+    const [, a] = QUIZ[qz.dayNum - 1][qz.idx];
+    const box = document.getElementById("quizA");
+    box.textContent = a; box.classList.remove("hidden");
+    document.getElementById("quizActions").innerHTML = '<button class="quiz-btn good" id="qGot">✓ I had it</button><button class="quiz-btn warn" id="qMiss">✗ missed it</button>';
+    return;
+  }
+  if ((e.target.closest("#qGot") || e.target.closest("#qMiss")) && qz) {
+    if (e.target.closest("#qMiss")) qz.missed.push(QUIZ[qz.dayNum - 1][qz.idx][0]);
+    qz.idx++;
+    if (qz.idx < 3) showQuizQ(); else finishQuiz();
+    return;
+  }
+  if (e.target.closest("#qClose")) { closeQuiz(); return; }
+  if (e.target.closest("#qReread") && qz) { closeQuiz(); return; }
+  if (e.target.closest("#qAnyway") && qz) { markDone(qz.dayId, false); closeQuiz(); return; }
+  if (e.target.closest("#quizSkip") && qz) { markDone(qz.dayId, false); closeQuiz(); return; }
+  if (e.target.id === "quizOverlay") { closeQuiz(); return; }
+});
+
+// ───── cross-device sync (GitHub Gist) ─────
+const NUDGE = [
+ { s: "Which join keeps everyone, matched or not?", p: "Trade space for speed \u2014 remember what you've already seen." },
+ { s: "Rank the salaries, then skip one.", p: "What structure kills duplicates instantly?" },
+ { s: "One table, two names.", p: "Count letters, compare counts." },
+ { s: "Per department \u2014 group first, or window over?", p: "Count the magazine once, then spend from it." },
+ { s: "Ranking with ties \u2014 which rank function has no gaps?", p: "Map both directions, not just one." },
+ { s: "Decide which duplicate survives: the smallest id.", p: "Walk both sequences together, in step." },
+ { s: "Compare each day to the day before it.", p: "Two passes: count everything, then find the first 1." },
+ { s: "Look back one row, then two.", p: "Anagrams share a signature \u2014 what is it?" },
+ { s: "Count children per parent, then filter the counts.", p: "Compare all words column by column." },
+ { s: "What do missing-bonus rows look like AFTER the join?", p: "Overwrite in place with two pointers." },
+ { s: "No join needed at all here.", p: "Start filling from the back, not the front." },
+ { s: "Count orders per customer, take the top.", p: "One value fills more than half \u2014 what survives pairwise cancellation?" },
+ { s: "Both directions of a request count as friendship.", p: "The array's own indices can store the answer." },
+ { s: "Root has no parent; a leaf appears in no parent column.", p: "Track the cheapest day seen so far." },
+ { s: "Odd and even ids swap partners \u2014 CASE it.", p: "Multiply everything on the left by everything on the right." },
+ { s: "Two counts: shared tiv, unique location.", p: "Sort first \u2014 overlaps become neighbors." },
+ { s: "Compare each customer's distinct count to the catalog total.", p: "Last opened must close first \u2014 which structure does that?" },
+ { s: "First year per product \u2014 rank within each product.", p: "Store the minimum WITH each value, not beside it." },
+ { s: "Just filter the date range and count distinct users.", p: "Split on '/', then push and pop." },
+ { s: "WHERE vs ON \u2014 the filter's location changes who survives.", p: "Brackets nest \u2014 save the state before each '['." },
+ { s: "Latest change on or before the date, per product.", p: "Buckets plus modulo." },
+ { s: "First order per customer, compare it to the preferred date.", p: "A fixed-size ring \u2014 move the head pointer, not the data." },
+ { s: "One scan \u2014 put the CASE inside the aggregates.", p: "Days waiting for warmth \u2014 keep the unresolved ones somewhere." },
+ { s: "Running total, stop before it passes 1000.", p: "If a running sum appeared before, the gap between them sums to k." },
+ { s: "Shrink to one row per day FIRST.", p: "Best subarray ending here vs starting fresh here." },
+ { s: "Two mini leaderboards, glued together.", p: "Recency order IS the whole problem." },
+ { s: "First login per player, then peek exactly one day ahead.", p: "Count first, then take the top k." },
+ { s: "Sell adds, Buy subtracts \u2014 signed sum.", p: "Sort by two criteria at once \u2014 one of them negated." },
+ { s: "Three buckets can come from one scan.", p: "You don't need the whole array sorted." },
+ { s: "A rate is just the average of a true/false.", p: "Distance ORDER doesn't need the square root." },
+ { s: "Top 3 with ties \u2014 dense ranking or not?", p: "Only start counting from a sequence's true beginning." },
+ { s: "Find managers who vanished from the employee list.", p: "Keep only the k biggest \u2014 smallest of them on top." },
+ { s: "Each process's start and end rows pair up.", p: "A window that JUMPS the left pointer, not creeps it." },
+ { s: "Consecutive ids minus row numbers stay constant.", p: "Only remember the last k elements." },
+ { s: "Ban them from both seats of the trip.", p: "Nine boxes \u2014 how do you give each a name?" },
+ { s: "Count per manager after joining the table to itself.", p: "Four walls closing inward." },
+ { s: "Difference of two timestamps, grouped twice.", p: "Delete = swap with the last element, then drop it." },
+ { s: "Anchor the pattern at both ends.", p: "Flip along the diagonal first, then look again." },
+ { s: "Y-flagged rows, PLUS the employees with only one row.", p: "The most frequent task dictates the schedule's frame." },
+ { s: "Plain GROUP BY and COUNT \u2014 race the clock instead.", p: "Fix one number, squeeze the other two toward each other." },
+ { s: "Aggregate the strings themselves, not numbers.", p: "Handle \u00d7 and \u00f7 immediately; bank + and \u2212 for the end." },
+ { s: "Compute the one total ONCE, reuse it.", p: "Read pointer ahead, write pointer behind." },
+ { s: "Two averages \u2014 both of expressions, not columns.", p: "Keep a running 26-letter scoreboard for the window." },
+ { s: "One column per month \u2014 CASE each one.", p: "Merge only the freshest few from each followed user." },
+ { s: "First letter up, the rest down.", p: "Meet in the middle." }
+];
+const QUIZ = [
+ [["Which workload uses columnar storage, and why?","OLAP/analytics \u2014 queries read a few columns across many rows; columnar scans only the needed columns and compresses far better."],["A banking app processing money transfers \u2014 OLTP or OLAP?","OLTP: many small read/write transactions touching individual rows."],["Why are OLAP tables often denormalized?","To avoid join cost at query time \u2014 storage is cheap, analyst query speed is the priority."]],
+ [["Schema-on-write vs schema-on-read \u2014 which system is which?","Warehouse = schema-on-write (enforced at load). Lake = schema-on-read (raw files, structure applied when queried)."],["What problem does a lakehouse solve?","It adds warehouse features (ACID updates, schema, governance) on top of cheap lake storage via table formats like Delta/Iceberg."],["Where should raw JSON API dumps land first?","In the lake (object storage), unchanged \u2014 transform later, keep raw for reprocessing."]],
+ [["What goes in a fact table vs a dimension table?","Fact: events/measurements \u2014 numeric measures + foreign keys. Dimension: descriptive context (who/what/where/when)."],["Why is it called a star schema?","One central fact table joined directly to the dimension tables around it."],["Is 'customer email' a fact or a dimension attribute?","Dimension attribute \u2014 it describes, it doesn't measure."]],
+ [["Define grain in one sentence.","Grain = what exactly one row of the fact table represents."],["Transaction fact vs periodic snapshot fact?","Transaction: one row per event. Periodic snapshot: one row per entity per period (e.g., daily account balance)."],["Why must grain be decided FIRST?","Every measure and dimension must be consistent with it \u2014 mixed grain silently breaks aggregations."]],
+ [["SCD Type 1 vs Type 2?","Type 1 overwrites the old value (history lost). Type 2 adds a new row with validity dates \u2014 history preserved."],["Which columns typically implement Type 2?","valid_from, valid_to, is_current flag (plus a surrogate key so one customer has many rows)."],["Customer moves city and old reports must stay accurate \u2014 which type?","Type 2 \u2014 old rows keep the old city for historical facts."]],
+ [["Surrogate key vs natural key?","Surrogate: meaningless generated ID. Natural: real business value (email, PAN)."],["Why do warehouses prefer surrogate keys?","They're stable when business values change, join compactly, and are required for SCD2 (same customer, many rows)."],["Why normalize OLTP but denormalize OLAP?","OLTP: avoid update anomalies on writes. OLAP: avoid join cost on reads."]],
+ [["State the grain of the fact table you built today, in one sentence.","Self-check: 'one row = one <event> per <entity> per <time>'. If you can't say it cleanly, the model isn't done."],["How do fact and dimension tables join?","Foreign key in the fact \u2192 primary/surrogate key in the dimension."],["Why a date DIMENSION instead of just a date column?","It carries attributes \u2014 month, weekday, holiday flag, fiscal period \u2014 so grouping needs no date math."]],
+ [["Why is Parquet faster than CSV for analytics?","Columnar, typed, compressed, and carries min/max metadata \u2014 engines read only needed columns and skip irrelevant blocks."],["When would you pick Avro over Parquet?","Row-oriented, write-heavy streams (Kafka messages) and schema evolution in transit."],["Does CSV store data types?","No \u2014 everything is text; types must be declared or inferred (and often inferred wrong)."]],
+ [["What does a branch let you do?","Work on changes in isolation without touching main until they're ready."],["Commit vs push?","Commit records a snapshot in your LOCAL history; push uploads those commits to the remote."],["What is a pull request for?","Proposing changes and getting them reviewed before merging into main."]],
+ [["What is a dbt model, physically?","A single SELECT statement in a .sql file that dbt materializes as a view or table."],["What does ref() do besides referencing a model?","It declares a dependency, letting dbt build the DAG and run models in the right order."],["View vs table materialization \u2014 the trade-off?","View: always fresh, computed at query time. Table: precomputed and fast to read, but must be rebuilt."]],
+ [["What's allowed in a staging model?","Only 1:1 source cleanup \u2014 renaming, casting, light standardization. No joins, no business logic."],["Which layer do analysts query?","Marts \u2014 the final fact/dimension models."],["How does dbt know about your raw tables?","They're declared as sources in YAML (and referenced with source())."]],
+ [["Name two generic dbt tests.","unique, not_null (also accepted_values, relationships)."],["What does the relationships test verify?","Referential integrity \u2014 every value in this column exists in the referenced model's column."],["What is a singular test?","A custom SQL query that must return ZERO rows to pass."]],
+ [["How does an incremental model know what's new?","A filter like WHERE updated_at > (SELECT MAX(updated_at) FROM {{ this }}) inside an is_incremental() block."],["Which dbt feature implements SCD Type 2 for you?","Snapshots \u2014 dbt manages valid_from/valid_to automatically."],["When do you still need --full-refresh?","When logic or schema changes, or history needs correcting \u2014 incremental only appends going forward."]],
+ [["What is a dbt macro?","A reusable, parameterized chunk of templated SQL \u2014 a function for SQL."],["Why use a Jinja for-loop in SQL?","To generate repetitive SQL (e.g., a CASE per category) without copy-paste."],["What's the risk of heavy Jinja?","The compiled SQL becomes hard to read and debug \u2014 use it to remove duplication, not to show off."]],
+ [["Why CTEs over nested subqueries?","Named, ordered steps that read top-to-bottom \u2014 self-documenting logic."],["When is a temp table better than a CTE?","When an expensive intermediate result is reused many times."],["Do CTEs automatically improve performance?","No \u2014 they're mainly for readability; many engines inline them into one plan anyway."]],
+ [["What must the project README include?","What it does, the structure/lineage, and exactly how to run it."],["What in this repo proves 'engineering', not just analysis?","Layered models, tests, docs, and version-controlled history."],["Which layer holds the business logic?","Intermediate/marts \u2014 never staging."]],
+ [["Image vs container?","Image = frozen template (OS + deps + code). Container = a running instance of that image."],["What are volumes for?","Persisting data beyond the container's lifecycle."],["Why does DE care about Docker at all?","Reproducible environments \u2014 Airflow, Spark, databases all ship and run as containers."]],
+ [["What does docker-compose add over docker run?","Multiple services, ports, volumes, env vars and networking declared in one YAML file."],["How does Postgres keep data across container restarts?","A named volume mapped to its data directory."],["How do two services in one compose file reach each other?","By service name as hostname on the shared network (e.g., host=postgres)."]],
+ [["What is a DAG in Airflow?","The pipeline: a directed acyclic graph of tasks with dependencies and a schedule."],["Task vs operator?","Operator = the reusable class/template; task = a configured instance of one inside a DAG."],["What does the scheduler do?","Creates DAG runs on schedule and queues tasks whose dependencies have succeeded."]],
+ [["Your task failed \u2014 where do you look first?","The task's logs in the UI (per attempt), not the DAG code."],["What does t1 >> t2 mean?","t2 runs only after t1 succeeds \u2014 a dependency edge."],["Why did Airflow need docker-compose?","It's several cooperating services \u2014 scheduler, webserver, metadata DB \u2014 compose wires them together."]],
+ [["Why is ELT the modern default over ETL?","Warehouses are cheap and powerful: land raw first, transform in SQL/dbt, and keep raw data for reprocessing."],["Name two realities of extracting from APIs.","Pagination and rate limits (plus auth headers and retries)."],["Why never modify raw data in place?","Raw is your reprocessing and audit safety net \u2014 transforms can always be redone from it."]],
+ [["What is a watermark in loading?","The stored max timestamp/ID marking what's already been loaded \u2014 next run starts after it."],["What does MERGE (upsert) do?","Updates rows whose keys match, inserts rows that are new."],["When is full refresh perfectly fine?","Small tables where reloading everything costs nothing \u2014 don't over-engineer."]],
+ [["Define an idempotent task.","Running it twice produces the same end state as running it once."],["Why does blind INSERT break idempotency?","A rerun duplicates rows \u2014 use delete+insert for the partition, or MERGE."],["What is a backfill?","Re-running the pipeline for past periods to fill gaps or fix history \u2014 safe only if tasks are idempotent."]],
+ [["Name three load-time quality checks.","Any three of: row counts vs source, nulls in key columns, freshness, duplicates, referential integrity."],["What is a dead-letter table?","Quarantine for bad rows \u2014 the pipeline continues without silently dropping data."],["Fail loudly or continue silently \u2014 why loudly?","Silent bad data destroys trust in every downstream number; loud failures get found and fixed."]],
+ [["What should every pipeline task log?","Rows in, rows out, duration, and the watermark/parameters used."],["What does an SLA mean for a pipeline?","A data-readiness contract \u2014 e.g., 'yesterday's data available by 7am'."],["Alert on every retry, or on final failure?","Final failure and SLA misses \u2014 retries are normal noise."]],
+ [["Which single property makes your pipeline safe to rerun?","Idempotency \u2014 reruns and backfills produce the same state."],["Where does dbt sit in your capstone?","The transform layer, inside the warehouse, after raw data is loaded."],["What makes your pipeline incremental?","Watermark-filtered extraction and loads instead of full reloads each run."]],
+ [["Driver vs executors?","Driver plans and coordinates; executors do the actual work on data partitions."],["What does lazy evaluation enable?","Spark sees the whole plan before running, so it can optimize it end-to-end."],["When is Spark overkill?","When data fits comfortably on one machine \u2014 plain SQL or pandas is simpler and faster."]],
+ [["What does groupBy().agg() return?","A new DataFrame \u2014 transformations never mutate, they derive."],["How do you run SQL on a DataFrame?","df.createOrReplaceTempView('t') then spark.sql('SELECT ... FROM t')."],["What actually triggers execution?","An action \u2014 count, collect, show, write. Transformations alone do nothing."]],
+ [["Narrow vs wide transformation?","Narrow: each partition works alone (filter, map). Wide: data must move between nodes (groupBy, join, distinct)."],["Why are shuffles expensive?","Network transfer + disk + serialization across the whole cluster."],["Filter-then-join or join-then-filter?","Filter first \u2014 shrink the data before the expensive wide operation."]],
+ [["What is a broadcast join?","Ship the small table to every executor so the big table never shuffles."],["What is skew?","One hot key holds far more data than others \u2014 one task lags and stalls the whole stage."],["repartition vs coalesce?","repartition = full shuffle to increase/rebalance partitions; coalesce = merge down to fewer without a full shuffle."]],
+ [["Window function vs groupBy in Spark?","Window keeps every row and adds a computed column; groupBy collapses rows."],["Why write partitionBy('date') Parquet?","Engines prune entire folders on the partition column \u2014 massively less IO."],["Where do you inspect the query plan?","df.explain() or the Spark UI's SQL tab."]],
+ [["Where does Kafka guarantee ordering?","Only within a single partition \u2014 never across the whole topic."],["What is an offset?","A consumer's position in a partition's log \u2014 its bookmark."],["What does a consumer group do?","Splits partitions among its members for parallelism; each message goes to one member per group."]],
+ [["At-least-once delivery implies what for your consumer?","Duplicates are possible \u2014 processing must be idempotent (dedupe by key)."],["Tumbling vs sliding window?","Tumbling: fixed, non-overlapping buckets. Sliding: overlapping intervals that advance by a step."],["What is a streaming watermark?","The threshold for how late events may arrive before a window's result is finalized."]],
+ [["How does Structured Streaming actually process data?","Micro-batches under the hood, using the same DataFrame API as batch."],["Why is checkpointing required?","To recover offsets and state after failure \u2014 the basis of its exactly-once-ish guarantees."],["What is a trigger?","The setting controlling how often a micro-batch fires."]],
+ [["What's the core problem with plain Parquet on S3?","No transactions \u2014 you can't safely update, delete, or write concurrently."],["What does the transaction log add?","ACID commits, time travel to old versions, and safe schema evolution."],["Name the three major table formats.","Delta Lake, Apache Iceberg, Apache Hudi."]],
+ [["Why dedupe BEFORE aggregating?","Duplicates silently inflate every aggregate \u2014 fanout bugs at scale."],["How do you check how many partitions a DataFrame has?","df.rdd.getNumPartitions(), or look at the stage in the Spark UI."],["Why write Parquet, not CSV, as job output?","Typed, compressed, splittable, and prunable by downstream readers."]],
+ [["Why is object storage so cheap and scalable?","Flat key\u2192blob storage with no filesystem semantics or attached compute."],["What does a path like table/date=2026-07-19/ enable?","Partition pruning \u2014 engines skip folders that can't match the filter."],["Can you append to an existing S3 object?","No \u2014 objects are immutable; you write new objects instead."]],
+ [["What does separating storage and compute enable?","Scaling and paying for each independently, and multiple compute clusters on the same data."],["Why does SELECT * cost real money in BigQuery?","Billing is per bytes scanned; columnar storage means every column you name gets scanned."],["What is partition/block metadata used for?","Pruning \u2014 skipping blocks whose min/max stats can't match the filter."]],
+ [["Describe the classic S3 + Lambda pattern.","A file landing in the bucket fires an event that triggers the ingestion function."],["Name two Lambda limits that matter.","Execution timeout (~15 min) and memory/package size."],["When is Lambda the wrong tool?","Long or heavy jobs \u2014 that's Spark/Glue/warehouse territory."]],
+ [["IAM role vs access keys in code?","Roles give temporary credentials attached to the compute \u2014 preferred; hardcoded keys leak."],["Where do secrets belong?","A secrets manager or environment variables \u2014 never in Git (check .gitignore for .env)."],["What does least privilege mean?","Grant only the exact actions on the exact resources needed \u2014 nothing more."]],
+ [["What does Terraform manage?","Infrastructure declared as code \u2014 diffed, reviewed, and applied like software."],["What should CI run on a dbt repo's PRs?","Linting (sqlfluff) and dbt build + tests against a test schema."],["Why IaC instead of clicking in the console?","Reviewable, repeatable, versioned \u2014 environments you can recreate."]],
+ [["What replaced your local disk in the cloud version?","Object storage \u2014 S3/GCS."],["What triggers ingestion now?","An event (file landing) or a schedule via a cloud scheduler/Airflow."],["What stayed IDENTICAL from the local pipeline?","The transform logic (dbt/SQL) \u2014 that portability is the point of ELT."]],
+ [["First thing to look for in an EXPLAIN plan?","Full table scans and join order \u2014 where the big cost sits."],["Give two ways to cut warehouse cost.","Any two of: prune via partition/cluster keys, select only needed columns, materialize hot queries, auto-suspend/right-size compute."],["Why avoid functions on the filter column?","WHERE f(col) = x defeats indexes and pruning \u2014 everything gets scanned."]],
+ [["First question to ask in a pipeline design interview?","Requirements: data volume, latency needs (batch or streaming), and who consumes it."],["Sketch the standard skeleton from memory.","Sources \u2192 ingestion \u2192 lake/storage \u2192 processing \u2192 warehouse/marts \u2192 orchestration, quality, monitoring."],["How do you signal seniority in the answer?","Trade-offs out loud \u2014 cost vs latency, simplicity vs scale \u2014 not tool name-dropping."]],
+ [["What goes at the top of a project README?","A one-paragraph problem statement plus an architecture diagram."],["The resume bullet formula?","Action + tech + scale/outcome: 'Built incremental Airflow+dbt pipeline processing X rows daily with automated quality checks.'"],["What keeps running through interview season?","The daily SQL and Python drills \u2014 never let them lapse now."]]
+];
+const SYNC_KEY = "de_tracker_sync_v1";
+let sync = {};
+try { const raw = localStorage.getItem(SYNC_KEY); if (raw) sync = JSON.parse(raw) || {}; } catch (e) {}
+const $s = id => document.getElementById(id);
+if (sync.token) $s("syncToken").value = sync.token;
+if (sync.gist) $s("syncGist").value = sync.gist;
+if (sync.token) $s("syncPanel").open = false;
+
+function syncStatus(msg, ok) {
+  const el = $s("syncStatus");
+  el.textContent = msg;
+  el.style.color = ok === false ? "#E08683" : ok === true ? "var(--teal)" : "var(--muted)";
+}
+function collectData() { return { v: 1, ts: Date.now(), checks, notes }; }
+function applyData(data) {
+  if (!data || typeof data !== "object") throw new Error("bad data");
+  checks = data.checks || {};
+  notes = data.notes || [];
+  try { localStorage.setItem(KEY, JSON.stringify({ checks })); } catch (e) {}
+  saveNotes(); render(); renderNotes();
+}
+function rememberSync() {
+  sync = { token: $s("syncToken").value.trim(), gist: $s("syncGist").value.trim() };
+  try { localStorage.setItem(SYNC_KEY, JSON.stringify(sync)); } catch (e) {}
+}
+const GH = "https://api.github.com/gists";
+const ghHeaders = () => ({ "Authorization": "Bearer " + sync.token, "Accept": "application/vnd.github+json", "Content-Type": "application/json" });
+const FILE = "de-tracker-data.json";
+
+async function pushSync(silent) {
+  rememberSync();
+  if (!sync.token) { if (!silent) syncStatus("Enter a GitHub token first.", false); return; }
+  try {
+    if (!silent) syncStatus("pushing…");
+    const body = { description: "DE transition tracker — progress + notes", files: {} };
+    body.files[FILE] = { content: JSON.stringify(collectData()) };
+    let res;
+    if (sync.gist) {
+      res = await fetch(GH + "/" + sync.gist, { method: "PATCH", headers: ghHeaders(), body: JSON.stringify(body) });
+    } else {
+      body.public = false;
+      res = await fetch(GH, { method: "POST", headers: ghHeaders(), body: JSON.stringify(body) });
+    }
+    if (!res.ok) throw new Error("GitHub said " + res.status + (res.status === 401 ? " — check the token" : res.status === 404 ? " — check the Gist ID / token scope" : ""));
+    const j = await res.json();
+    if (!sync.gist && j.id) { sync.gist = j.id; $s("syncGist").value = j.id; rememberSync(); }
+    syncStatus("synced to cloud ✓ " + new Date().toLocaleTimeString(), true);
+  } catch (e) { syncStatus("push failed: " + e.message, false); }
+}
+async function pullSync() {
+  rememberSync();
+  if (!sync.token || !sync.gist) { syncStatus("Need both token and Gist ID to pull.", false); return; }
+  try {
+    syncStatus("pulling…");
+    const res = await fetch(GH + "/" + sync.gist, { headers: ghHeaders() });
+    if (!res.ok) throw new Error("GitHub said " + res.status);
+    const j = await res.json();
+    const f = j.files && j.files[FILE];
+    if (!f) throw new Error("no tracker data in that Gist");
+    const data = JSON.parse(f.content);
+    if (!confirm("Replace progress on THIS device with the cloud copy from " + new Date(data.ts).toLocaleString() + "?")) { syncStatus("pull cancelled"); return; }
+    applyData(data);
+    syncStatus("pulled from cloud ✓", true);
+  } catch (e) { syncStatus("pull failed: " + e.message, false); }
+}
+let syncTimer = null;
+function scheduleSync() {
+  if (!sync.token || !sync.gist) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => pushSync(true), 4000);
+}
+
+document.addEventListener("click", e => {
+  if (e.target.closest("#syncPush")) { pushSync(false); return; }
+  if (e.target.closest("#syncPull")) { pullSync(); return; }
+  if (e.target.closest("#syncForget")) {
+    sync = {}; try { localStorage.removeItem(SYNC_KEY); } catch (err) {}
+    $s("syncToken").value = ""; $s("syncGist").value = "";
+    syncStatus("credentials removed from this device");
+    return;
+  }
+  if (e.target.closest("#expBtn")) {
+    const ta = $s("portArea");
+    ta.classList.remove("hidden"); $s("impApply").classList.add("hidden");
+    ta.value = btoa(unescape(encodeURIComponent(JSON.stringify(collectData()))));
+    ta.focus(); ta.select();
+    syncStatus("code selected — copy it (Ctrl/Cmd+C), paste on the other device");
+    return;
+  }
+  if (e.target.closest("#impBtn")) {
+    const ta = $s("portArea");
+    ta.classList.remove("hidden"); ta.value = ""; ta.placeholder = "paste the exported code here";
+    $s("impApply").classList.remove("hidden"); ta.focus();
+    return;
+  }
+  if (e.target.closest("#impApply")) {
+    try {
+      const data = JSON.parse(decodeURIComponent(escape(atob($s("portArea").value.trim()))));
+      if (!confirm("Replace progress on THIS device with the imported copy?")) return;
+      applyData(data);
+      $s("portArea").classList.add("hidden"); $s("impApply").classList.add("hidden");
+      syncStatus("imported ✓", true);
+    } catch (err) { syncStatus("import failed — is the code complete?", false); }
+    return;
+  }
+});
+render();
+</script>
+</body>
+</html>
